@@ -10,4 +10,6 @@ secp256k1 = { version = "0.30.0", features = ["rand", "global-context", "recover
 sha3 = "0.10.8"
 hex = "0.4"
 num-bigint = "0.4"
-num-prime = "0.4"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.41.1", features = ["full"] }
