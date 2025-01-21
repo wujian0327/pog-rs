@@ -2,7 +2,6 @@ use crate::tools;
 use crate::tools::get_timestamp;
 use crate::wallet::Wallet;
 use hex::encode;
-use log::info;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -30,7 +29,7 @@ impl Transaction {
         let t_json = serde_json::to_string(&t).unwrap();
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
         let signature = wallet.sign(hash.to_vec());
-        let hash = encode(&hash);
+        let hash = encode(hash);
         t.hash = hash;
         t.signature = signature;
         t
@@ -49,7 +48,7 @@ impl Transaction {
         };
         let t_json = serde_json::to_string(&t).unwrap();
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
-        if self.hash != encode(&hash) {
+        if self.hash != encode(hash) {
             return false;
         }
         Wallet::verify_by_address(Vec::from(hash), self.signature.clone(), from)
@@ -59,6 +58,7 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::info;
 
     #[test]
     fn test_transaction() {

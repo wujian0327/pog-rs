@@ -1,6 +1,5 @@
 use crate::blockchain::transaction::Transaction;
 use crate::wallet::Wallet;
-use log::info;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -93,6 +92,7 @@ impl From<serde_json::error::Error> for PathError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::info;
 
     #[test]
     fn test_transaction_paths() {

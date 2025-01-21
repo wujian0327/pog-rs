@@ -1,4 +1,3 @@
-use crate::network::node::Node;
 use log::info;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;

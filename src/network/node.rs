@@ -6,7 +6,7 @@ use crate::network::message::{Message, MessageType};
 use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
-use log::{error, info, warn};
+use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
@@ -97,15 +97,15 @@ impl Node {
         let new_block = {
             let blockchain = self.blockchain.clone().read().await.clone();
 
-            let new_block = Block::new(
+            
+            Block::new(
                 blockchain.get_lash_index() + 1,
                 epoch,
                 slot,
                 blockchain.get_last_hash(),
                 body,
                 self.wallet.clone(),
-            )?;
-            new_block
+            )?
         };
         {
             if let Err(e) = self
@@ -196,11 +196,9 @@ impl Node {
                         let transactions_cache = self.transaction_paths_cache.read().await;
                         let mut skip = false;
                         for cache in transactions_cache.iter() {
-                            if cache.transaction.hash == transaction_paths.transaction.hash {
-                                if cache.paths.len() <= transaction_paths.paths.len() {
-                                    skip = true;
-                                    break;
-                                }
+                            if cache.transaction.hash == transaction_paths.transaction.hash && cache.paths.len() <= transaction_paths.paths.len() {
+                                skip = true;
+                                break;
                             }
                         }
                         if skip {

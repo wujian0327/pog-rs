@@ -1,14 +1,12 @@
-use crate::blockchain::block::{Block, BlockError};
 use crate::network::node::Node;
 use crate::network::validator::ValidatorError::NOValidatorError;
-use crate::wallet;
 use crate::wallet::Wallet;
 use log::info;
 use num_bigint::{BigUint, ToBigUint};
 use rand::rngs::{OsRng, StdRng};
 use rand::{Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -55,7 +53,7 @@ impl RandaoSeed {
     }
 
     pub(crate) fn generate_seed() -> [u8; 32] {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
         seed
@@ -177,6 +175,7 @@ fn simple_vdf(seed: &[u8; 32], difficulty: u64) -> (BigUint, BigUint) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blockchain::block::Block;
     use crate::blockchain::blockchain::Blockchain;
 
     #[test]

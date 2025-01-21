@@ -1,5 +1,4 @@
 use crate::blockchain::block::Block;
-use crate::blockchain::blockchain::BlockChainError;
 use crate::blockchain::path::TransactionPaths;
 use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;

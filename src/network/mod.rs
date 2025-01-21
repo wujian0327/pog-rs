@@ -3,19 +3,14 @@ use crate::blockchain::blockchain::Blockchain;
 use crate::network::message::Message;
 use crate::network::node::{Neighbor, Node};
 use crate::network::world_state::WorldState;
-use crate::tools;
-use crate::tools::get_timestamp;
 use futures::future::join_all;
 use futures::FutureExt;
 use log::info;
 use rand::seq::IteratorRandom;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
-use tokio::task::JoinHandle;
-use tokio::time::Instant;
-use tokio::{join, task, time};
+use tokio::time;
 
 mod graph;
 mod message;
@@ -48,7 +43,7 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
         .iter()
         .map(|(address, node)| (address.clone(), node.index))
         .collect();
-    let nodes_address: Vec<String> = node_map.keys().map(|x| x.clone()).collect();
+    let nodes_address: Vec<String> = node_map.keys().cloned().collect();
     info!("generate nodes");
 
     //4. gen the network graph

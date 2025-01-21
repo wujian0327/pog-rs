@@ -129,7 +129,7 @@ impl Wallet {
     }
 
     fn print(&self) {
-        info!("Secret Key: 0x{}", encode(&self.secret_key.secret_bytes()));
+        info!("Secret Key: 0x{}", encode(self.secret_key.secret_bytes()));
         let public_key_bytes = &self.public_key.serialize_uncompressed()[1..];
         info!("Public Key: 0x{}", encode(public_key_bytes));
         info!("Address: {}", &self.address);

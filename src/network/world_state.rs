@@ -1,8 +1,6 @@
 use crate::blockchain::block::Block;
 use crate::network::message::{Message, MessageType};
-use crate::network::node::Node;
-use crate::network::validator::ValidatorError::NOValidatorError;
-use crate::network::validator::{Randao, RandaoSeed, Validator, ValidatorError};
+use crate::network::validator::{Randao, RandaoSeed, Validator};
 use crate::tools;
 use crate::tools::get_timestamp;
 use log::{error, info, warn};
@@ -49,7 +47,7 @@ impl WorldState {
             WorldState {
                 current_slot: Arc::new(RwLock::new(SlotManager {
                     randao_seeds: vec![],
-                    slot_duration: SLOT_DURATION.clone(),
+                    slot_duration: SLOT_DURATION,
                     current_epoch: 0,
                     current_slot: 0,
                     next_seed: [0; 32],
@@ -74,7 +72,7 @@ impl WorldState {
         let next_seed = randao.combine_seed();
         self.current_slot = Arc::new(RwLock::new(SlotManager {
             randao_seeds: vec![],
-            slot_duration: SLOT_DURATION.clone(),
+            slot_duration: SLOT_DURATION,
             current_epoch: current_slot.current_epoch,
             current_slot: current_slot.current_slot + 1,
             next_seed,
@@ -87,7 +85,7 @@ impl WorldState {
         );
 
         let nodes_sender: Vec<Sender<Message>> =
-            self.nodes_sender.iter().map(|(_, s)| s.clone()).collect();
+            self.nodes_sender.values().map(|s| s.clone()).collect();
 
         //通知所有节点更新slot
         for sender in nodes_sender {

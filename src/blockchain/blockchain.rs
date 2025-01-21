@@ -35,10 +35,8 @@ impl Blockchain {
         if self.get_last_block().header.epoch > block.header.epoch {
             return Err(BlockChainError::EpochError);
         }
-        if self.get_last_block().header.epoch == block.header.epoch {
-            if self.get_last_block().header.slot > block.header.slot {
-                return Err(BlockChainError::SlotError);
-            }
+        if self.get_last_block().header.epoch == block.header.epoch && self.get_last_block().header.slot > block.header.slot {
+            return Err(BlockChainError::SlotError);
         }
         self.blocks.push(block);
         Ok(())
