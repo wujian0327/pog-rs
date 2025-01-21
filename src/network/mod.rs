@@ -150,7 +150,8 @@ impl TransactionGenerator {
             interval.tick().await;
             info!(
                 "Transaction Generator send {} transaction in {}s",
-                self.trans_num_per_interval, self.trans_num_per_interval
+                self.trans_num_per_interval,
+                self.time_interval.as_secs()
             );
             for _ in 0..self.trans_num_per_interval {
                 let node = self.nodes_sender.iter().choose(&mut rand::thread_rng());

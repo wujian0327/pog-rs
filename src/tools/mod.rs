@@ -26,3 +26,7 @@ pub fn get_time_string() -> String {
     let now = Local::now();
     now.format("%Y-%m-%d %H:%M:%S").to_string()
 }
+
+pub fn short_hash(s: String) -> String {
+    (&s[0..5]).to_string()
+}

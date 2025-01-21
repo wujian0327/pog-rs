@@ -166,6 +166,21 @@ impl Block {
             info!("{}", s);
         }
     }
+
+    pub fn simple_print_no_transaction_detail(&self) {
+        info!("Block[{}]:", self.header.index);
+        info!("\t epoch:{}:", self.header.epoch);
+        info!("\t slot:{}:", self.header.slot);
+        info!("\t miner:{}:", self.header.miner);
+        info!("\t timestamp:{}:", self.header.timestamp);
+        let trans_hash: Vec<String> = self
+            .body
+            .transactions
+            .iter()
+            .map(|x| x.hash.to_string())
+            .collect();
+        info!("\t transactions[{}]", trans_hash.join(","));
+    }
 }
 
 impl Body {

@@ -66,6 +66,14 @@ impl TransactionPaths {
     pub fn to_json(&self) -> Vec<u8> {
         serde_json::to_vec(&self).unwrap()
     }
+
+    pub fn to_paths_string(&self) -> String {
+        self.paths
+            .iter()
+            .map(|x| (&x.to.clone()[0..5]).to_string())
+            .collect::<Vec<String>>()
+            .join("->")
+    }
 }
 
 #[derive(Debug)]

@@ -1,16 +1,23 @@
 use crate::blockchain::block::Block;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Blockchain {
     blocks: Vec<Block>,
+    transactions_hash_set: HashSet<String>,
 }
 
 impl Blockchain {
     pub fn new(genesis_block: Block) -> Blockchain {
+        let mut set = HashSet::new();
+        for x in genesis_block.clone().body.transactions {
+            set.insert(x.hash.to_string());
+        }
         Blockchain {
             blocks: vec![genesis_block],
+            transactions_hash_set: set,
         }
     }
 
@@ -35,11 +42,26 @@ impl Blockchain {
         if self.get_last_block().header.epoch > block.header.epoch {
             return Err(BlockChainError::EpochError);
         }
-        if self.get_last_block().header.epoch == block.header.epoch && self.get_last_block().header.slot > block.header.slot {
+        if self.get_last_block().header.epoch == block.header.epoch
+            && self.get_last_block().header.slot > block.header.slot
+        {
             return Err(BlockChainError::SlotError);
         }
-        self.blocks.push(block);
+        //check transaction if exists
+        for x in block.clone().body.transactions {
+            if self.exist_transaction(x.hash.to_string()) {
+                return Err(BlockChainError::TransactionExists);
+            }
+        }
+        self.blocks.push(block.clone());
+        for x in block.body.transactions {
+            self.transactions_hash_set.insert(x.hash.to_string());
+        }
         Ok(())
+    }
+
+    pub fn exist_transaction(&self, hash: String) -> bool {
+        self.transactions_hash_set.contains(&hash)
     }
 
     pub fn get_last_block(&self) -> Block {
@@ -56,7 +78,7 @@ impl Blockchain {
     pub fn simple_print_last_five_block(&self) {
         let last_five = &self.blocks[self.blocks.len().saturating_sub(5)..];
         for x in last_five {
-            x.simple_print();
+            x.simple_print_no_transaction_detail();
         }
     }
 }
@@ -69,6 +91,7 @@ pub enum BlockChainError {
     EpochError,
     SlotError,
     DuplicateBlocksReceived,
+    TransactionExists,
 }
 
 impl fmt::Display for BlockChainError {
@@ -92,6 +115,10 @@ impl fmt::Display for BlockChainError {
 
             BlockChainError::DuplicateBlocksReceived => {
                 write!(f, "Duplicate Block Received")
+            }
+
+            BlockChainError::TransactionExists => {
+                write!(f, "Transaction exists")
             }
         }
     }

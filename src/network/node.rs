@@ -6,13 +6,13 @@ use crate::network::message::{Message, MessageType};
 use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
-use log::{error, info};
+use log::{error, info, warn};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 
-///Node 主要负责与其他节点交互
-///     通过Tokio的mpsc通道进行交互
+///通过Tokio的mpsc通道与其他节点交互
+///负责出块、发送交易、发送seed
 pub(crate) struct Node {
     pub index: u32,
     pub epoch: u64,
@@ -97,7 +97,6 @@ impl Node {
         let new_block = {
             let blockchain = self.blockchain.clone().read().await.clone();
 
-            
             Block::new(
                 blockchain.get_lash_index() + 1,
                 epoch,
@@ -127,9 +126,16 @@ impl Node {
         self.wallet.address.clone()
     }
 
+    pub fn short_address(&self) -> String {
+        (&self.wallet.address.clone()[0..5]).to_string()
+    }
+
+    pub fn short_address_with_index(&self) -> String {
+        self.index.to_string() + "-" + self.short_address().as_str()
+    }
+
     pub async fn run(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
-            info!("Node[{}] received msg type: {}", self.index, msg.msg_type);
             match msg.msg_type {
                 MessageType::SEND_BLOCK => {
                     let block = match Block::from_json(msg.data) {
@@ -139,6 +145,10 @@ impl Node {
                             continue;
                         }
                     };
+                    info!(
+                        "Node[{}] received msg[{}]: block hash[{}]",
+                        self.index, msg.msg_type, block.header.hash
+                    );
                     {
                         //添加到自己的区块链
                         let mut blockchain = self.blockchain.write().await;
@@ -170,6 +180,10 @@ impl Node {
                     //广播到其他邻居
                     for neighbor_sender in self.neighbors.clone() {
                         let block = block.clone();
+                        info!(
+                            "Node[{}] send block to Node[{}]",
+                            self.index, neighbor_sender.index
+                        );
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -183,20 +197,33 @@ impl Node {
                     let transaction_paths = match TransactionPaths::from_json(msg.data) {
                         Ok(t) => t,
                         Err(e) => {
-                            info!("Node[{}] error: {}", self.index, e);
+                            error!("Node[{}] error: {}", self.index, e);
                             continue;
                         }
                     };
+
                     if !transaction_paths.verify(self.wallet.address.clone()) {
-                        info!("Node[{}] invalid transaction paths", self.index);
+                        error!("Node[{}] invalid transaction paths", self.index);
                         continue;
+                    }
+                    {
+                        let bc = self.blockchain.read().await;
+                        if bc.exist_transaction(transaction_paths.transaction.hash.clone()) {
+                            warn!(
+                                "Node[{}] received transaction[{}] already in blockchain",
+                                self.index, transaction_paths.transaction.hash
+                            );
+                            continue;
+                        }
                     }
                     //判断交易是否已经收到了,判断交易的paths是否最短
                     {
                         let transactions_cache = self.transaction_paths_cache.read().await;
                         let mut skip = false;
                         for cache in transactions_cache.iter() {
-                            if cache.transaction.hash == transaction_paths.transaction.hash && cache.paths.len() <= transaction_paths.paths.len() {
+                            if cache.transaction.hash == transaction_paths.transaction.hash
+                                && cache.paths.len() <= transaction_paths.paths.len()
+                            {
                                 skip = true;
                                 break;
                             }
@@ -205,6 +232,13 @@ impl Node {
                             continue;
                         }
                     }
+                    info!(
+                        "Node[{}] received msg[{}]: transaction hash[{}],path[{}]",
+                        self.short_address_with_index(),
+                        msg.msg_type,
+                        transaction_paths.transaction.hash,
+                        transaction_paths.to_paths_string(),
+                    );
                     //收到交易，存储
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
@@ -215,12 +249,16 @@ impl Node {
                     }
                     //并广播到邻居
                     for neighbor_sender in self.neighbors.clone() {
-                        info!(
-                            "Node[{}] send transaction paths to Node[{}]",
-                            self.index, neighbor_sender.index
-                        );
                         let mut new_trans_paths = transaction_paths.clone();
-                        new_trans_paths.add_path(neighbor_sender.address, self.wallet.clone());
+                        new_trans_paths
+                            .add_path(neighbor_sender.address.clone(), self.wallet.clone());
+                        info!(
+                            "Node[{}] send transaction[{}] paths[{}] to Node[{}]",
+                            self.short_address_with_index(),
+                            new_trans_paths.transaction.hash,
+                            new_trans_paths.to_paths_string(),
+                            neighbor_sender.short_address_with_index()
+                        );
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -240,6 +278,10 @@ impl Node {
                             continue;
                         }
                     };
+                    info!(
+                        "Node[{}] received msg[{}]: block hash[{}]",
+                        self.index, msg.msg_type, block.header.hash
+                    );
                     //广播区块
                     for neighbor_sender in self.neighbors.clone() {
                         let block = block.clone();
@@ -265,6 +307,13 @@ impl Node {
                     };
                     let transaction = Transaction::new(to, 0, self.wallet.clone());
                     let transaction_paths = TransactionPaths::new(transaction);
+                    info!(
+                        "Node[{}] received msg[{}]: transaction hash[{}],path[{}]",
+                        self.short_address_with_index(),
+                        msg.msg_type,
+                        transaction_paths.transaction.hash,
+                        transaction_paths.to_paths_string()
+                    );
                     //缓存交易
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
@@ -272,12 +321,16 @@ impl Node {
                     }
                     //广播交易
                     for neighbor_sender in self.neighbors.clone() {
-                        info!(
-                            "Node[{}] send transaction paths to Node[{}]",
-                            self.index, neighbor_sender.index
-                        );
                         let mut new_trans_paths = transaction_paths.clone();
-                        new_trans_paths.add_path(neighbor_sender.address, self.wallet.clone());
+                        new_trans_paths
+                            .add_path(neighbor_sender.address.clone(), self.wallet.clone());
+                        info!(
+                            "Node[{}] send transaction[{}] paths[{}] to Node[{}]",
+                            self.short_address_with_index(),
+                            new_trans_paths.transaction.hash,
+                            new_trans_paths.to_paths_string(),
+                            neighbor_sender.short_address_with_index()
+                        );
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -295,12 +348,17 @@ impl Node {
                         seed,
                         signature,
                     };
+                    info!(
+                        "Node[{}] received msg[{}]: seed[{:?}]",
+                        self.index, msg.msg_type, seed
+                    );
                     self.world_state_sender
                         .send(Message::new_receive_random_seed_msg(randao_seed))
                         .await
                         .unwrap();
                 }
                 MessageType::BECOME_VALIDATOR => {
+                    info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
                     self.world_state_sender
                         .send(Message::new_receive_become_validator_msg(Validator::new(
                             self.wallet.address.clone(),
@@ -317,10 +375,12 @@ impl Node {
                             continue;
                         }
                     };
+                    info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
                     self.slot = slot.current_slot;
                     self.epoch = slot.current_epoch;
                 }
                 MessageType::PRINT_BLOCKCHAIN => {
+                    info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
                     self.blockchain.read().await.simple_print_last_five_block();
                 }
                 _ => {}
@@ -336,6 +396,14 @@ impl Neighbor {
             address,
             sender,
         }
+    }
+
+    pub fn short_address(&self) -> String {
+        (&self.address.clone()[0..5]).to_string()
+    }
+
+    pub fn short_address_with_index(&self) -> String {
+        self.index.to_string() + "-" + self.short_address().as_str()
     }
 }
 

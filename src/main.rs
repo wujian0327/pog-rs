@@ -11,6 +11,14 @@ mod wallet;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    //log setting
+    init_logger()?;
+
+    network::start_network(10, 50).await;
+    Ok(())
+}
+
+pub fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     let config = ConfigBuilder::new()
         .set_time_format_str("%Y-%m-%d %H:%M:%S")
         .build();
@@ -28,7 +36,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ])
     .unwrap();
-
-    network::start_network(10, 10).await;
     Ok(())
 }
