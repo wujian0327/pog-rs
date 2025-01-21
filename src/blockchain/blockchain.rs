@@ -14,9 +14,17 @@ impl Blockchain {
         }
     }
 
+    pub fn get_block(&self, height: u64) -> Block {
+        self.blocks[height as usize - 1].clone()
+    }
+
     pub fn add_block(&mut self, block: Block) -> Result<(), BlockChainError> {
         if !block.verify() {
             return Err(BlockChainError::InvalidBlock);
+        }
+        if self.get_last_hash() == block.header.hash {
+            //重复收到
+            return Err(BlockChainError::DuplicateBlocksReceived);
         }
         if self.get_last_hash() != block.header.parent_hash {
             return Err(BlockChainError::ParentHashMismatch);
@@ -55,13 +63,14 @@ impl Blockchain {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum BlockChainError {
     InvalidBlock,
     ParentHashMismatch,
     IndexMismatch,
     EpochError,
     SlotError,
+    DuplicateBlocksReceived,
 }
 
 impl fmt::Display for BlockChainError {
@@ -81,6 +90,10 @@ impl fmt::Display for BlockChainError {
             }
             BlockChainError::SlotError => {
                 write!(f, "Slot Error")
+            }
+
+            BlockChainError::DuplicateBlocksReceived => {
+                write!(f, "Duplicate Block Received")
             }
         }
     }

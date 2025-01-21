@@ -1,9 +1,8 @@
-use crate::blockchain::block::{Block, BlockError};
 use crate::blockchain::transaction::Transaction;
 use crate::wallet::Wallet;
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Path {
     pub to: String,
@@ -106,7 +105,7 @@ mod tests {
         transaction_paths.add_path(wallet2.address.clone(), wallet);
         transaction_paths.add_path(wallet3.address.clone(), wallet2);
         transaction_paths.add_path(miner.address.clone(), wallet3);
-        println!("{:#?}", transaction_paths);
+        info!("{:#?}", transaction_paths);
         assert!(transaction_paths.verify(miner.address.clone()));
     }
 }

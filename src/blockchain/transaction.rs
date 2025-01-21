@@ -1,6 +1,8 @@
 use crate::tools;
+use crate::tools::get_timestamp;
 use crate::wallet::Wallet;
 use hex::encode;
+use log::info;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -10,6 +12,7 @@ pub struct Transaction {
     pub amount: i64,
     pub hash: String,
     pub signature: String,
+    pub timestamp: u64,
 }
 
 impl Transaction {
@@ -22,6 +25,7 @@ impl Transaction {
             amount,
             hash: "".to_string(),
             signature: "".to_string(),
+            timestamp: get_timestamp(),
         };
         let t_json = serde_json::to_string(&t).unwrap();
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
@@ -41,6 +45,7 @@ impl Transaction {
             amount: self.amount,
             hash: "".to_string(),
             signature: "".to_string(),
+            timestamp: self.timestamp,
         };
         let t_json = serde_json::to_string(&t).unwrap();
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
@@ -59,7 +64,7 @@ mod tests {
     fn test_transaction() {
         let wallet = Wallet::new();
         let transaction = Transaction::new("123".to_string(), 32, wallet);
-        println!("{:#?}", transaction);
+        info!("{:#?}", transaction);
         assert!(transaction.verify());
     }
 }

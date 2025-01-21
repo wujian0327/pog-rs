@@ -1,5 +1,6 @@
 use crate::tools::Hasher;
 use hex::{decode, encode, FromHexError};
+use log::info;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use std::fmt;
@@ -128,10 +129,10 @@ impl Wallet {
     }
 
     fn print(&self) {
-        println!("Secret Key: 0x{}", encode(&self.secret_key.secret_bytes()));
+        info!("Secret Key: 0x{}", encode(&self.secret_key.secret_bytes()));
         let public_key_bytes = &self.public_key.serialize_uncompressed()[1..];
-        println!("Public Key: 0x{}", encode(public_key_bytes));
-        println!("Address: {}", &self.address);
+        info!("Public Key: 0x{}", encode(public_key_bytes));
+        info!("Address: {}", &self.address);
     }
 }
 

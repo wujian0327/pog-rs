@@ -1,3 +1,4 @@
+use chrono::Local;
 use sha3::{Digest, Sha3_256};
 use std::time::SystemTime;
 
@@ -19,4 +20,9 @@ pub fn get_timestamp() -> u64 {
     now.duration_since(std::time::UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs()
+}
+
+pub fn get_time_string() -> String {
+    let now = Local::now();
+    now.format("%Y-%m-%d %H:%M:%S").to_string()
 }

@@ -1,3 +1,9 @@
+use log::LevelFilter;
+use simplelog::{
+    ColorChoice, CombinedLogger, Config, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
+};
+use std::fs::File;
+
 mod blockchain;
 mod network;
 mod tools;
@@ -5,6 +11,24 @@ mod wallet;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Hello, world!");
+    let config = ConfigBuilder::new()
+        .set_time_format_str("%Y-%m-%d %H:%M:%S")
+        .build();
+    CombinedLogger::init(vec![
+        TermLogger::new(
+            LevelFilter::Info,
+            config.clone(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        ),
+        WriteLogger::new(
+            LevelFilter::Info,
+            config,
+            File::create("output.log").unwrap(),
+        ),
+    ])
+    .unwrap();
+
+    network::start_network(10, 10).await;
     Ok(())
 }

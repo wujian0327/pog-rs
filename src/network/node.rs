@@ -1,57 +1,82 @@
 use crate::blockchain::block::{Block, BlockError, Body};
 use crate::blockchain::blockchain::{BlockChainError, Blockchain};
-use crate::blockchain::path::{Path, PathError, TransactionPaths};
+use crate::blockchain::path::{Path, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::network::message::{Message, MessageType};
+use crate::network::validator::{RandaoSeed, Validator};
+use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
+use log::{error, info, warn};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 
 ///Node 主要负责与其他节点交互
 ///     通过Tokio的mpsc通道进行交互
-struct Node {
-    index: u32,
-    wallet: Wallet,
-    blockchain: Arc<RwLock<Blockchain>>,
-    sender: Sender<Message>,
-    receiver: Receiver<Message>,
-    neighbors: Vec<Neighbor>,
-    transaction_paths_cache: RwLock<Vec<TransactionPaths>>,
+pub(crate) struct Node {
+    pub index: u32,
+    pub epoch: u64,
+    pub slot: u64,
+    pub wallet: Wallet,
+    pub blockchain: Arc<RwLock<Blockchain>>,
+    pub sender: Sender<Message>,
+    pub receiver: Receiver<Message>,
+    pub neighbors: Vec<Neighbor>,
+    pub world_state_sender: Sender<Message>,
+    pub transaction_paths_cache: Arc<RwLock<Vec<TransactionPaths>>>,
 }
 
 #[derive(Clone)]
-struct Neighbor {
+pub struct Neighbor {
     index: u32,
     address: String,
     sender: Sender<Message>,
 }
 
 impl Node {
-    pub fn new(index: u32, blockchain: Blockchain) -> Self {
+    pub fn new(
+        index: u32,
+        epoch: u64,
+        slot: u64,
+        blockchain: Blockchain,
+        world_state_sender: Sender<Message>,
+    ) -> Self {
         let wallet = Wallet::new();
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
         Node {
             index,
+            epoch,
+            slot,
             wallet,
             blockchain: Arc::new(RwLock::new(blockchain)),
             sender,
             receiver,
-            transaction_paths_cache: RwLock::new(Vec::new()),
+            transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
             neighbors: Vec::new(),
+            world_state_sender,
         }
     }
 
-    pub fn new_with_wallet(index: u32, blockchain: Blockchain, wallet: Wallet) -> Self {
+    pub fn new_with_wallet(
+        index: u32,
+        epoch: u64,
+        slot: u64,
+        blockchain: Blockchain,
+        wallet: Wallet,
+        world_state_sender: Sender<Message>,
+    ) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
         Node {
             index,
+            epoch,
+            slot,
             wallet,
             blockchain: Arc::new(RwLock::new(blockchain)),
             sender,
             receiver,
-            transaction_paths_cache: RwLock::new(Vec::new()),
+            transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
             neighbors: Vec::new(),
+            world_state_sender,
         }
     }
 
@@ -90,32 +115,57 @@ impl Node {
                 .await
                 .add_block(new_block.clone())
             {
-                println!("{:?}", e);
+                info!("Node[{}] error :{}", self.index, e);
                 return Err(BlockError::InvalidBlock);
             };
         }
 
         Ok(new_block)
     }
+
+    pub fn get_address(&self) -> String {
+        self.wallet.address.clone()
+    }
+
     pub async fn run(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
-            println!("Node[{}] received msg type: {}", self.index, msg.msg_type);
+            info!("Node[{}] received msg type: {}", self.index, msg.msg_type);
             match msg.msg_type {
                 MessageType::SEND_BLOCK => {
                     let block = match Block::from_json(msg.data) {
                         Ok(b) => b,
                         Err(e) => {
-                            println!("{}", e);
+                            info!("Node[{}] error: {}", self.index, e);
                             continue;
                         }
                     };
                     {
+                        //添加到自己的区块链
                         let mut blockchain = self.blockchain.write().await;
                         if let Err(e) = blockchain.add_block(block.clone()) {
-                            println!("{}", e);
+                            match e {
+                                BlockChainError::DuplicateBlocksReceived => {
+                                    info!("Node[{}] error: {}", self.index, e);
+                                }
+                                _ => {
+                                    error!("Node[{}] error: {}", self.index, e);
+                                }
+                            }
+                            continue;
                         }
-                        println!("Node[{}] add block successfully", self.index);
-                        block.simple_print();
+                        info!("Node[{}] add block successfully", self.index);
+                    }
+                    {
+                        //清除交易缓存
+                        let tx_hashs: Vec<String> = block
+                            .body
+                            .transactions
+                            .iter()
+                            .map(|t| t.hash.to_string())
+                            .collect();
+                        let mut transaction_paths_cache =
+                            self.transaction_paths_cache.write().await;
+                        transaction_paths_cache.retain(|x| !tx_hashs.contains(&x.transaction.hash));
                     }
                     //广播到其他邻居
                     for neighbor_sender in self.neighbors.clone() {
@@ -133,12 +183,12 @@ impl Node {
                     let transaction_paths = match TransactionPaths::from_json(msg.data) {
                         Ok(t) => t,
                         Err(e) => {
-                            println!("{}", e);
+                            info!("Node[{}] error: {}", self.index, e);
                             continue;
                         }
                     };
                     if !transaction_paths.verify(self.wallet.address.clone()) {
-                        println!("Node[{}] invalid transaction paths", self.index);
+                        info!("Node[{}] invalid transaction paths", self.index);
                         continue;
                     }
                     //判断交易是否已经收到了,判断交易的paths是否最短
@@ -162,12 +212,12 @@ impl Node {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
                         //先删除，再添加
                         transactions_cache
-                            .retain(|t| t.transaction.hash == transaction_paths.transaction.hash);
+                            .retain(|t| t.transaction.hash != transaction_paths.transaction.hash);
                         transactions_cache.push(transaction_paths.clone())
                     }
                     //并广播到邻居
                     for neighbor_sender in self.neighbors.clone() {
-                        println!(
+                        info!(
                             "Node[{}] send transaction paths to Node[{}]",
                             self.index, neighbor_sender.index
                         );
@@ -184,8 +234,98 @@ impl Node {
                 }
 
                 MessageType::GENERATE_BLOCK => {
-                    self.generate_block(0, 1).await.unwrap();
+                    //出块
+                    let block = match self.generate_block(self.epoch, self.slot).await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            info!("Node[{}] generate block failed:{}", self.index, e);
+                            continue;
+                        }
+                    };
+                    //广播区块
+                    for neighbor_sender in self.neighbors.clone() {
+                        let block = block.clone();
+                        tokio::spawn(async move {
+                            neighbor_sender
+                                .sender
+                                .send(Message::new_block_msg(block))
+                                .await
+                                .unwrap();
+                        });
+                    }
                 }
+                MessageType::GENERATE_TRANSACTION_PATHS => {
+                    let to = match String::from_utf8(msg.data) {
+                        Ok(to) => to,
+                        Err(e) => {
+                            info!(
+                                "Node[{}] generate transaction paths failed:{}",
+                                self.index, e
+                            );
+                            continue;
+                        }
+                    };
+                    let transaction = Transaction::new(to, 0, self.wallet.clone());
+                    let transaction_paths = TransactionPaths::new(transaction);
+                    //缓存交易
+                    {
+                        let mut transactions_cache = self.transaction_paths_cache.write().await;
+                        transactions_cache.push(transaction_paths.clone())
+                    }
+                    //广播交易
+                    for neighbor_sender in self.neighbors.clone() {
+                        info!(
+                            "Node[{}] send transaction paths to Node[{}]",
+                            self.index, neighbor_sender.index
+                        );
+                        let mut new_trans_paths = transaction_paths.clone();
+                        new_trans_paths.add_path(neighbor_sender.address, self.wallet.clone());
+                        tokio::spawn(async move {
+                            neighbor_sender
+                                .sender
+                                .send(Message::new_transaction_paths_msg(new_trans_paths))
+                                .await
+                                .unwrap();
+                        });
+                    }
+                }
+                MessageType::SEND_RANDAO_SEED => {
+                    let seed = RandaoSeed::generate_seed();
+                    let signature = self.wallet.sign(Vec::from(seed));
+                    let randao_seed = RandaoSeed {
+                        address: self.wallet.address.clone(),
+                        seed,
+                        signature,
+                    };
+                    self.world_state_sender
+                        .send(Message::new_receive_random_seed_msg(randao_seed))
+                        .await
+                        .unwrap();
+                }
+                MessageType::BECOME_VALIDATOR => {
+                    self.world_state_sender
+                        .send(Message::new_receive_become_validator_msg(Validator::new(
+                            self.wallet.address.clone(),
+                            32,
+                        )))
+                        .await
+                        .unwrap();
+                }
+                MessageType::UPDATE_SLOT => {
+                    let slot = match SlotManager::from_json(msg.data) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            info!("Node[{}] error: {}", self.index, e);
+                            continue;
+                        }
+                    };
+                    self.slot = slot.current_slot;
+                    self.epoch = slot.current_epoch;
+                }
+                MessageType::PRINT_BLOCKCHAIN => {
+                    self.blockchain.read().await.simple_print_last_five_block();
+                }
+                _ => {}
             }
         }
     }
@@ -212,6 +352,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_block() {
+        let (world_sender, _) = tokio::sync::mpsc::channel(8);
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let wallet = Wallet::new();
         let wallet2 = Wallet::new();
@@ -233,7 +374,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut node = Node::new(0, blockchain);
+        let mut node = Node::new(0, 0, 0, blockchain, world_sender);
         let node_sender = node.sender.clone();
         let handle1 = tokio::spawn(async move {
             node.run().await;
@@ -241,7 +382,7 @@ mod tests {
 
         let msg = Message::new_block_msg(block);
         let handle2 = tokio::spawn(async move {
-            println!("send msg:{:?}", msg);
+            info!("send msg:{:?}", msg);
             node_sender.send(msg).await.unwrap();
         });
 
@@ -252,16 +393,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_transaction() {
+    async fn test_send_transaction_and_block() {
+        let (world_sender, _) = tokio::sync::mpsc::channel(8);
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let wallet0 = Wallet::new();
         let wallet1 = Wallet::new();
         let wallet2 = Wallet::new();
         let wallet3 = Wallet::new();
-        let mut node0 = Node::new_with_wallet(0, blockchain.clone(), wallet0.clone());
-        let mut node1 = Node::new_with_wallet(1, blockchain.clone(), wallet1.clone());
-        let mut node2 = Node::new_with_wallet(2, blockchain.clone(), wallet2.clone());
-        let mut node3 = Node::new_with_wallet(3, blockchain.clone(), wallet3.clone());
+        let mut node0 = Node::new_with_wallet(
+            0,
+            0,
+            1,
+            blockchain.clone(),
+            wallet0.clone(),
+            world_sender.clone(),
+        );
+        let mut node1 = Node::new_with_wallet(
+            1,
+            0,
+            1,
+            blockchain.clone(),
+            wallet1.clone(),
+            world_sender.clone(),
+        );
+        let mut node2 = Node::new_with_wallet(
+            2,
+            0,
+            1,
+            blockchain.clone(),
+            wallet2.clone(),
+            world_sender.clone(),
+        );
+        let mut node3 = Node::new_with_wallet(
+            3,
+            0,
+            1,
+            blockchain.clone(),
+            wallet3.clone(),
+            world_sender.clone(),
+        );
 
         node0.neighbors.push(Neighbor::new(
             node1.index,
@@ -279,13 +449,33 @@ mod tests {
             node3.sender.clone(),
         ));
 
+        node3.neighbors.push(Neighbor::new(
+            node2.index,
+            node2.wallet.address.clone(),
+            node2.sender.clone(),
+        ));
+
+        node2.neighbors.push(Neighbor::new(
+            node1.index,
+            node1.wallet.address.clone(),
+            node1.sender.clone(),
+        ));
+
+        node1.neighbors.push(Neighbor::new(
+            node0.index,
+            node0.wallet.address.clone(),
+            node0.sender.clone(),
+        ));
+        let node0_bc = node0.blockchain.clone();
         let node0_sender = node0.sender.clone();
         let handle0 = tokio::spawn(async move {
             node0.run().await;
         });
+        let node1_bc = node1.blockchain.clone();
         let handle1 = tokio::spawn(async move {
             node1.run().await;
         });
+        let node2_bc = node2.blockchain.clone();
         let handle2 = tokio::spawn(async move {
             node2.run().await;
         });
@@ -310,6 +500,19 @@ mod tests {
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
+
+        assert_eq!(
+            node0_bc.read().await.get_last_hash(),
+            node1_bc.read().await.get_last_hash()
+        );
+        assert_eq!(
+            node1_bc.read().await.get_last_hash(),
+            node2_bc.read().await.get_last_hash()
+        );
+        assert_eq!(
+            node2_bc.read().await.get_last_hash(),
+            node3_bc.read().await.get_last_hash()
+        );
         {
             node3_bc.read().await.simple_print_last_five_block();
         }

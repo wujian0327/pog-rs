@@ -3,9 +3,9 @@ use crate::blockchain::transaction::Transaction;
 use crate::tools;
 use crate::wallet::Wallet;
 use hex::encode;
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Block {
     pub header: Header,
@@ -91,18 +91,18 @@ impl Block {
 
     pub fn verify(&self) -> bool {
         if self.body.transactions.len() != self.body.paths.len() {
-            println!("{}", BlockError::InvalidBlock);
+            info!("{}", BlockError::InvalidBlock);
             return false;
         }
         for (i, transaction) in self.body.transactions.iter().enumerate() {
             if !transaction.verify() {
-                println!("{}", BlockError::InvalidBlockTransactions);
+                info!("{}", BlockError::InvalidBlockTransactions);
                 return false;
             }
             let trans_paths =
                 TransactionPaths::new_with_paths(transaction.clone(), self.body.paths[i].clone());
             if !trans_paths.verify(self.header.miner.clone()) {
-                println!("{}", BlockError::InvalidBlockPath);
+                info!("{}", BlockError::InvalidBlockPath);
                 return false;
             }
         }
@@ -141,35 +141,29 @@ impl Block {
         Ok(block)
     }
 
-    pub fn from_json_string(json: String) -> Result<Block, BlockError> {
-        let block: Block = serde_json::from_str(json.as_str())?;
-        Ok(block)
-    }
-
     pub fn to_json(&self) -> Vec<u8> {
         serde_json::to_vec(&self).unwrap()
     }
 
     pub fn simple_print(&self) {
-        println!("Block[{}]:", self.header.index);
-        println!("\t epoch:{}:", self.header.epoch);
-        println!("\t slot:{}:", self.header.slot);
-        println!("\t miner:{}:", self.header.miner);
-        println!("\t timestamp:{}:", self.header.timestamp);
+        info!("Block[{}]:", self.header.index);
+        info!("\t epoch:{}:", self.header.epoch);
+        info!("\t slot:{}:", self.header.slot);
+        info!("\t miner:{}:", self.header.miner);
+        info!("\t timestamp:{}:", self.header.timestamp);
         for (i, x) in self.body.transactions.iter().enumerate() {
-            println!("\t transactions[{i}]:");
-            println!("\t\t from:{}:", x.from);
-            println!("\t\t to:{}:", x.to);
-            println!("\t\t paths:");
+            info!("\t transactions[{i}]:");
+            info!("\t\t from:{}:", x.from);
+            info!("\t\t to:{}:", x.to);
+            info!("\t\t paths:");
+            let mut s = String::from("");
             for (j, p) in self.body.paths[i].clone().iter().enumerate() {
-                if (j == 0) {
-                    print!("\t\t\t");
+                if j == 0 {
+                    s.push_str("\t\t\t");
                 }
-                print!("->{}", p.to);
-                if self.body.paths[i].len() == j + 1 {
-                    println!();
-                }
+                s.push_str(format!("->{}", p.to).as_str());
             }
+            info!("{}", s);
         }
     }
 }
@@ -236,16 +230,16 @@ mod tests {
         let block = match Block::new(0, 0, 0, String::from(""), body, miner) {
             Ok(block) => block,
             Err(e) => {
-                println!("{}", e);
+                info!("{}", e);
                 return;
             }
         };
-        println!("{:#?}", block);
+        info!("{:#?}", block);
         block.simple_print();
     }
 
     #[test]
     fn test_gen_genesis_block() {
-        println!("{:#?}", Block::gen_genesis_block());
+        info!("{:#?}", Block::gen_genesis_block());
     }
 }
