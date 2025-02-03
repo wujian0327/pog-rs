@@ -3,6 +3,8 @@ use crate::network::message::{Message, MessageType};
 use crate::network::validator::{Randao, RandaoSeed, Validator};
 use crate::tools;
 use crate::tools::get_timestamp;
+use bls_signatures::PublicKey;
+use lazy_static::lazy_static;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -38,6 +40,7 @@ pub struct SlotManager {
     pub next_seed: [u8; 32],
     pub start_timestamp: u64,
 }
+
 impl WorldState {
     pub fn new(genesis_block: Block) -> (Self, Sender<Message>, Receiver<Message>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
