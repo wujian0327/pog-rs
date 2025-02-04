@@ -168,7 +168,7 @@ impl TransactionPaths {
     pub fn to_paths_string(&self) -> String {
         self.paths
             .iter()
-            .map(|x| (&x.to.clone()[0..5]).to_string())
+            .map(|x| x.to.clone()[0..5].to_string())
             .collect::<Vec<String>>()
             .join("->")
     }
@@ -204,12 +204,12 @@ impl AggregatedSignedPaths {
             return false;
         }
         //miner和发起是一个节点
-        if transaction.from == miner && self.paths.first().unwrap().to_string() == miner {
+        if transaction.from == miner && *self.paths.first().unwrap() == miner {
             return true;
         }
 
         //miner必须是最后一个path
-        if self.paths.last().unwrap().to_string() != miner {
+        if *self.paths.last().unwrap() != miner {
             return false;
         }
         //聚合签名验证

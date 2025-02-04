@@ -3,8 +3,6 @@ use crate::network::message::{Message, MessageType};
 use crate::network::validator::{Randao, RandaoSeed, Validator};
 use crate::tools;
 use crate::tools::get_timestamp;
-use bls_signatures::PublicKey;
-use lazy_static::lazy_static;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -88,7 +86,7 @@ impl WorldState {
         );
 
         let nodes_sender: Vec<Sender<Message>> =
-            self.nodes_sender.values().map(|s| s.clone()).collect();
+            self.nodes_sender.values().cloned().collect();
 
         //通知所有节点更新slot
         for sender in nodes_sender {

@@ -1,6 +1,5 @@
 use crate::blockchain::block::Block;
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 
 #[derive(Debug, Clone)]

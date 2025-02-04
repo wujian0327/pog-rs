@@ -1,15 +1,12 @@
 use crate::blockchain::block::{Block, BlockError, Body};
 use crate::blockchain::blockchain::{BlockChainError, Blockchain};
-use crate::blockchain::path::{AggregatedSignedPaths, Path, TransactionPaths};
+use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::network::message::{Message, MessageType};
 use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;
-use crate::wallet;
 use crate::wallet::Wallet;
-use bls_signatures::PublicKey;
 use log::{error, info, warn};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
@@ -130,7 +127,7 @@ impl Node {
     }
 
     pub fn short_address(&self) -> String {
-        (&self.wallet.address.clone()[0..5]).to_string()
+        self.wallet.address.clone()[0..5].to_string()
     }
 
     pub fn short_address_with_index(&self) -> String {
@@ -402,7 +399,7 @@ impl Neighbor {
     }
 
     pub fn short_address(&self) -> String {
-        (&self.address.clone()[0..5]).to_string()
+        self.address.clone()[0..5].to_string()
     }
 
     pub fn short_address_with_index(&self) -> String {

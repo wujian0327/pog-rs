@@ -1,5 +1,4 @@
 use crate::tools::Hasher;
-use crate::wallet;
 use bls_signatures::{aggregate, verify_messages, Error, PrivateKey, Serialize, Signature};
 use dashmap::DashMap;
 use hex::{decode, encode, FromHexError};
@@ -7,11 +6,9 @@ use lazy_static::lazy_static;
 use log::info;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
-use std::collections::HashMap;
 use std::fmt;
 use std::num::ParseIntError;
 use std::str::FromStr;
-use std::sync::Arc;
 
 // 设置一个全局的bls的公钥管理对象
 // 一般来说，这个功能在以太坊2.0由验证者注册合约实现
@@ -41,7 +38,7 @@ lazy_static! {
 pub fn get_bls_pub_key(address: String) -> Option<bls_signatures::PublicKey> {
     BLS_PUB_KEY_MAP
         .get(&address)
-        .map(|entry| entry.value().clone())
+        .map(|entry| *entry.value())
 }
 pub fn insert_bls_pub_key(address: String, public_key: bls_signatures::PublicKey) {
     BLS_PUB_KEY_MAP.insert(address, public_key);
@@ -65,7 +62,7 @@ impl Wallet {
         let address = Wallet::public_key_to_address(public_key);
         let bls_private_key = PrivateKey::new(secret_key.secret_bytes());
         let bls_public_key = bls_private_key.public_key();
-        insert_bls_pub_key(address.clone(), bls_public_key.clone());
+        insert_bls_pub_key(address.clone(), bls_public_key);
         Wallet {
             secret_key,
             public_key,

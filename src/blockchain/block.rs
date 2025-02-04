@@ -1,4 +1,4 @@
-use crate::blockchain::path::{AggregatedSignedPaths, Path, TransactionPaths};
+use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::tools;
 use crate::wallet::Wallet;

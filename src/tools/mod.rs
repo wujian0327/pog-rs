@@ -28,5 +28,5 @@ pub fn get_time_string() -> String {
 }
 
 pub fn short_hash(s: String) -> String {
-    (&s[0..5]).to_string()
+    s[0..5].to_string()
 }
