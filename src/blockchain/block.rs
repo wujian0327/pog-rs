@@ -1,9 +1,9 @@
-use crate::blockchain::path::{Path, TransactionPaths};
+use crate::blockchain::path::{AggregatedSignedPaths, Path, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::tools;
 use crate::wallet::Wallet;
 use hex::encode;
-use log::info;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct Header {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Body {
     pub transactions: Vec<Transaction>,
-    pub paths: Vec<Vec<Path>>,
+    pub paths: Vec<AggregatedSignedPaths>,
 }
 
 impl Header {
@@ -78,9 +78,7 @@ impl Block {
             if !transaction.verify() {
                 return Err(BlockError::InvalidBlockTransactions);
             }
-            let trans_paths =
-                TransactionPaths::new_with_paths(transaction.clone(), body.paths[i].clone());
-            if !trans_paths.verify(wallet.address.clone()) {
+            if !body.paths[i].verify(transaction.clone(), wallet.address.clone()) {
                 return Err(BlockError::InvalidBlockPath);
             }
         }
@@ -91,18 +89,16 @@ impl Block {
 
     pub fn verify(&self) -> bool {
         if self.body.transactions.len() != self.body.paths.len() {
-            info!("{}", BlockError::InvalidBlock);
+            error!("{}", BlockError::InvalidBlock);
             return false;
         }
         for (i, transaction) in self.body.transactions.iter().enumerate() {
             if !transaction.verify() {
-                info!("{}", BlockError::InvalidBlockTransactions);
+                error!("{}", BlockError::InvalidBlockTransactions);
                 return false;
             }
-            let trans_paths =
-                TransactionPaths::new_with_paths(transaction.clone(), self.body.paths[i].clone());
-            if !trans_paths.verify(self.header.miner.clone()) {
-                info!("{}", BlockError::InvalidBlockPath);
+            if !self.body.paths[i].verify(transaction.clone(), self.header.miner.clone()) {
+                error!("{}", BlockError::InvalidBlockPath);
                 return false;
             }
         }
@@ -130,9 +126,9 @@ impl Block {
     pub fn gen_genesis_block() -> Block {
         let miner = Wallet::new();
         let transaction = Transaction::new("000".to_string(), 50, miner.clone());
-        let mut transaction_paths = TransactionPaths::new(transaction.clone());
-        transaction_paths.add_path(miner.address.clone(), miner.clone());
-        let body = Body::new(vec![transaction], vec![transaction_paths.paths]);
+        let transaction_paths = TransactionPaths::new(transaction.clone());
+        let paths = AggregatedSignedPaths::from_transaction_paths(transaction_paths);
+        let body = Body::new(vec![transaction], vec![paths]);
         Block::new(0, 0, 0, "".to_string(), body, miner).unwrap()
     }
 
@@ -157,11 +153,11 @@ impl Block {
             info!("\t\t to:{}:", x.to);
             info!("\t\t paths:");
             let mut s = String::from("");
-            for (j, p) in self.body.paths[i].clone().iter().enumerate() {
+            for (j, p) in self.body.paths[i].paths.clone().iter().enumerate() {
                 if j == 0 {
                     s.push_str("\t\t\t");
                 }
-                s.push_str(format!("->{}", p.to).as_str());
+                s.push_str(format!("->{}", p).as_str());
             }
             info!("{}", s);
         }
@@ -180,11 +176,13 @@ impl Block {
             .map(|x| x.hash.to_string())
             .collect();
         info!("\t transactions[{}]", trans_hash.join(","));
+        let paths: Vec<String> = self.body.paths.iter().map(|p| p.paths.join("->")).collect();
+        info!("\t paths[{}]", paths.join(","));
     }
 }
 
 impl Body {
-    pub(crate) fn new(transactions: Vec<Transaction>, paths: Vec<Vec<Path>>) -> Body {
+    pub(crate) fn new(transactions: Vec<Transaction>, paths: Vec<AggregatedSignedPaths>) -> Body {
         Body {
             transactions,
             paths,
@@ -229,6 +227,7 @@ impl From<serde_json::error::Error> for BlockError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet;
 
     #[test]
     fn test_block() {
@@ -236,25 +235,31 @@ mod tests {
         let wallet2 = Wallet::new();
         let wallet3 = Wallet::new();
         let miner = Wallet::new();
+
         let transaction = Transaction::new("123".to_string(), 32, wallet.clone());
         let mut transaction_paths = TransactionPaths::new(transaction.clone());
         transaction_paths.add_path(wallet2.address.clone(), wallet);
         transaction_paths.add_path(wallet3.address.clone(), wallet2);
         transaction_paths.add_path(miner.address.clone(), wallet3);
-        let body = Body::new(vec![transaction], vec![transaction_paths.paths.clone()]);
+        let body = Body::new(
+            vec![transaction],
+            vec![AggregatedSignedPaths::from_transaction_paths(
+                transaction_paths,
+            )],
+        );
         let block = match Block::new(0, 0, 0, String::from(""), body, miner) {
             Ok(block) => block,
             Err(e) => {
-                info!("{}", e);
+                error!("{}", e);
                 return;
             }
         };
-        info!("{:#?}", block);
+        println!("{:#?}", block);
         block.simple_print();
     }
 
     #[test]
     fn test_gen_genesis_block() {
-        info!("{:#?}", Block::gen_genesis_block());
+        println!("{:#?}", Block::gen_genesis_block());
     }
 }

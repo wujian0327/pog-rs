@@ -128,12 +128,17 @@ impl fmt::Display for BlockChainError {
 mod tests {
     use super::*;
     use crate::blockchain::block::Body;
-    use crate::blockchain::path::TransactionPaths;
+    use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
     use crate::blockchain::transaction::Transaction;
     use crate::wallet::Wallet;
 
     #[test]
     fn test_blockchain() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
         let mut blockchain = Blockchain::new(Block::gen_genesis_block());
         let wallet = Wallet::new();
         let wallet2 = Wallet::new();
@@ -144,7 +149,12 @@ mod tests {
         transaction_paths.add_path(wallet2.address.clone(), wallet);
         transaction_paths.add_path(wallet3.address.clone(), wallet2);
         transaction_paths.add_path(miner.address.clone(), wallet3);
-        let body = Body::new(vec![transaction], vec![transaction_paths.paths.clone()]);
+        let body = Body::new(
+            vec![transaction],
+            vec![AggregatedSignedPaths::from_transaction_paths(
+                transaction_paths,
+            )],
+        );
         let block = Block::new(
             blockchain.get_lash_index() + 1,
             0,

@@ -1,6 +1,6 @@
 use crate::blockchain::block::{Block, BlockError, Body};
 use crate::blockchain::blockchain::{BlockChainError, Blockchain};
-use crate::blockchain::path::{Path, TransactionPaths};
+use crate::blockchain::path::{AggregatedSignedPaths, Path, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::network::message::{Message, MessageType};
 use crate::network::validator::{RandaoSeed, Validator};
@@ -88,10 +88,10 @@ impl Node {
             transaction_paths_clone
         };
         let mut transactions: Vec<Transaction> = Vec::with_capacity(transaction_paths.len());
-        let mut paths: Vec<Vec<Path>> = Vec::with_capacity(transaction_paths.len());
+        let mut paths: Vec<AggregatedSignedPaths> = Vec::with_capacity(transaction_paths.len());
         for x in transaction_paths {
             transactions.push(x.transaction.clone());
-            paths.push(x.paths.clone());
+            paths.push(x.to_aggregated_signed_paths());
         }
         let body = Body::new(transactions, paths);
         let new_block = {
@@ -418,6 +418,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_block() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
         let (world_sender, _) = tokio::sync::mpsc::channel(8);
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let wallet = Wallet::new();
@@ -429,7 +434,11 @@ mod tests {
         transaction_paths.add_path(wallet2.address.clone(), wallet);
         transaction_paths.add_path(wallet3.address.clone(), wallet2);
         transaction_paths.add_path(miner.address.clone(), wallet3);
-        let body = Body::new(vec![transaction], vec![transaction_paths.paths.clone()]);
+
+        let body = Body::new(
+            vec![transaction],
+            vec![transaction_paths.to_aggregated_signed_paths()],
+        );
         let block = Block::new(
             blockchain.get_lash_index() + 1,
             0,
@@ -460,6 +469,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_transaction_and_block() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
         let (world_sender, _) = tokio::sync::mpsc::channel(8);
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let wallet0 = Wallet::new();

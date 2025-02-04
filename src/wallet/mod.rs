@@ -1,4 +1,5 @@
 use crate::tools::Hasher;
+use crate::wallet;
 use bls_signatures::{aggregate, verify_messages, Error, PrivateKey, Serialize, Signature};
 use dashmap::DashMap;
 use hex::{decode, encode, FromHexError};
@@ -46,6 +47,7 @@ impl Wallet {
         let address = Wallet::public_key_to_address(public_key);
         let bls_private_key = PrivateKey::new(secret_key.secret_bytes());
         let bls_public_key = bls_private_key.public_key();
+        insert_bls_pub_key(address.clone(), bls_public_key.clone());
         Wallet {
             secret_key,
             public_key,
@@ -199,6 +201,9 @@ impl Wallet {
     }
 
     pub fn bls_aggregated_sign(signatures: Vec<Signature>) -> String {
+        if signatures.is_empty() {
+            return String::new();
+        }
         let aggregated_signature = aggregate(&signatures).unwrap();
         format!("0x{}", encode(aggregated_signature.as_bytes()))
     }

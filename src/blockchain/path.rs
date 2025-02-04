@@ -116,6 +116,10 @@ impl TransactionPaths {
         true
     }
 
+    pub fn to_aggregated_signed_paths(&self) -> AggregatedSignedPaths {
+        AggregatedSignedPaths::from_transaction_paths(self.clone())
+    }
+
     pub fn from_json(json: Vec<u8>) -> Result<TransactionPaths, PathError> {
         let transaction_paths: TransactionPaths = serde_json::from_slice(json.as_slice())?;
         Ok(transaction_paths)
@@ -159,10 +163,20 @@ impl AggregatedSignedPaths {
         }
     }
 
-    pub fn verify(&self, tx_hash: String) -> bool {
+    pub fn verify(&self, transaction: Transaction, miner: String) -> bool {
         if self.paths.is_empty() {
             return false;
         }
+        //miner和发起是一个节点
+        if transaction.from == miner && self.paths.first().unwrap().to_string() == miner {
+            return true;
+        }
+
+        //miner必须是最后一个path
+        if self.paths.last().unwrap().to_string() != miner {
+            return false;
+        }
+        //聚合签名验证
         //先还原message
         let mut messages: Vec<Vec<u8>> = vec![];
         for (i, p) in self.paths.iter().enumerate() {
@@ -170,7 +184,7 @@ impl AggregatedSignedPaths {
             if i == 0 {
                 continue;
             }
-            let hash = concat_tx_hash_with_to_hash_static(tx_hash.clone(), p.clone());
+            let hash = concat_tx_hash_with_to_hash_static(transaction.hash.clone(), p.clone());
             messages.push(hash.to_vec());
         }
 
@@ -233,7 +247,7 @@ mod tests {
         //check aggregated_signed_paths
         let aggregated_signed_paths =
             AggregatedSignedPaths::from_transaction_paths(transaction_paths);
-        assert!(aggregated_signed_paths.verify(transaction.hash.clone()));
+        assert!(aggregated_signed_paths.verify(transaction.clone(), miner.address.clone()));
         println!("{:#?}", aggregated_signed_paths);
     }
 }

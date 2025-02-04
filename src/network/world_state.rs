@@ -249,6 +249,11 @@ mod tests {
 
     #[tokio::test]
     async fn timer_trigger() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let (world, _world_sender, world_receiver) =
             WorldState::new(blockchain.get_last_block().clone());
@@ -260,6 +265,11 @@ mod tests {
 
     #[tokio::test]
     async fn collect_seeds() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let (mut world, world_sender, world_receiver) =
             WorldState::new(blockchain.get_last_block().clone());
