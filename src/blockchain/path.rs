@@ -116,6 +116,42 @@ impl TransactionPaths {
         true
     }
 
+    //只需要验证上一个节点的签名就行，出块时才需要全部验证
+    pub fn verify_last(&self, current_address: String) -> bool {
+        if !self.transaction.clone().verify() {
+            return false;
+        }
+        //自己发起的
+        if self.paths.is_empty() && current_address == self.transaction.from {
+            return true;
+        }
+        if self.paths.is_empty() {
+            return false;
+        }
+        let mut from = self.transaction.from.clone();
+        if self.paths.len() > 1 {
+            from = self.paths[self.paths.len() - 2].clone().to;
+        }
+        let path = self.paths.last().unwrap();
+        let to = path.to.clone();
+        if to != current_address {
+            return false;
+        }
+        let signature = path.signature.clone();
+        let pk = match wallet::get_bls_pub_key(from) {
+            Some(pk) => pk,
+            None => {
+                return false;
+            }
+        };
+        let hash = self.concat_tx_hash_with_to_hash(to.clone());
+        let result = Wallet::verify_bls_with_pk(hash, signature, pk);
+        if !result {
+            return false;
+        }
+        true
+    }
+
     pub fn to_aggregated_signed_paths(&self) -> AggregatedSignedPaths {
         AggregatedSignedPaths::from_transaction_paths(self.clone())
     }

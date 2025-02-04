@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //log setting
     init_logger()?;
 
-    network::start_network(10, 50).await;
+    network::start_network(10, 10).await;
     Ok(())
 }
 

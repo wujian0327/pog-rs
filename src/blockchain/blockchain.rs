@@ -1,9 +1,9 @@
 use crate::blockchain::block::Block;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Blockchain {
     blocks: Vec<Block>,
     transactions_hash_set: HashSet<String>,

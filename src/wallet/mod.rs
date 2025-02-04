@@ -7,9 +7,11 @@ use lazy_static::lazy_static;
 use log::info;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use std::collections::HashMap;
 use std::fmt;
 use std::num::ParseIntError;
 use std::str::FromStr;
+use std::sync::Arc;
 
 // 设置一个全局的bls的公钥管理对象
 // 一般来说，这个功能在以太坊2.0由验证者注册合约实现
@@ -19,6 +21,22 @@ use std::str::FromStr;
 lazy_static! {
     static ref BLS_PUB_KEY_MAP: DashMap<String, bls_signatures::PublicKey> = DashMap::new();
 }
+
+// 定义一个 OnceCell 用于存储 Arc<HashMap<String, String>>
+// static HASHMAP_CELL: OnceCell<Arc<HashMap<String, bls_signatures::PublicKey>>> = OnceCell::new();
+//
+// fn init_pk_map(
+//     addresses: Vec<String>,
+//     pks: Vec<bls_signatures::PublicKey>,
+// ) -> &'static Arc<HashMap<String, bls_signatures::PublicKey>> {
+//     HASHMAP_CELL.get_or_init(|| {
+//         let mut map = HashMap::new();
+//         for (i, address) in addresses.into_iter().enumerate() {
+//             map.insert(address.to_string(), pks[i].clone());
+//         }
+//         Arc::new(map)
+//     })
+// }
 
 pub fn get_bls_pub_key(address: String) -> Option<bls_signatures::PublicKey> {
     BLS_PUB_KEY_MAP

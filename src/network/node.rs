@@ -5,8 +5,11 @@ use crate::blockchain::transaction::Transaction;
 use crate::network::message::{Message, MessageType};
 use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;
+use crate::wallet;
 use crate::wallet::Wallet;
+use bls_signatures::PublicKey;
 use log::{error, info, warn};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
@@ -202,7 +205,7 @@ impl Node {
                         }
                     };
 
-                    if !transaction_paths.verify(self.wallet.address.clone()) {
+                    if !transaction_paths.verify_last(self.wallet.address.clone()) {
                         error!("Node[{}] invalid transaction paths", self.index);
                         continue;
                     }
