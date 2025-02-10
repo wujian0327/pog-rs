@@ -1,5 +1,6 @@
 use crate::network::node::Node;
 use crate::network::validator::ValidatorError::NOValidatorError;
+use crate::tools;
 use crate::wallet::Wallet;
 use log::info;
 use num_bigint::{BigUint, ToBigUint};
@@ -126,7 +127,7 @@ impl Randao {
                 info!("Randao combine seed warning: invalid seed");
             }
         }
-        result
+        tools::Hasher::hash(Vec::from(result))
     }
     pub fn weighted_random_selection(&self) -> Result<Validator, ValidatorError> {
         if self.validators.is_empty() {

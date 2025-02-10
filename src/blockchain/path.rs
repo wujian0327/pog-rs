@@ -1,7 +1,7 @@
 use crate::blockchain::transaction::Transaction;
 use crate::wallet::Wallet;
 use crate::{tools, wallet};
-use bls_signatures::{PublicKey, Signature};
+use blst::min_sig::{PublicKey, Signature};
 use hex::decode;
 use serde::{Deserialize, Serialize};
 use std::fmt;

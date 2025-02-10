@@ -15,7 +15,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub(crate) fn new(to: String, amount: i64, wallet: Wallet) -> Transaction {
+    pub fn new(to: String, amount: i64, wallet: Wallet) -> Transaction {
         let from = wallet.address.clone();
 
         let mut t = Transaction {

@@ -1,13 +1,9 @@
 use log::LevelFilter;
+use pog::network;
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
 use std::fs::File;
-
-mod blockchain;
-mod network;
-mod tools;
-mod wallet;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

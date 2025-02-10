@@ -1,5 +1,9 @@
+mod blst_test;
+
 use crate::tools::Hasher;
-use bls_signatures::{aggregate, verify_messages, Error, PrivateKey, Serialize, Signature};
+use blst::min_sig::{AggregateSignature, SecretKey as BlsSecretKey};
+use blst::min_sig::{PublicKey as BlsPublicKey, Signature};
+use blst::BLST_ERROR;
 use dashmap::DashMap;
 use hex::{decode, encode, FromHexError};
 use lazy_static::lazy_static;
@@ -16,31 +20,13 @@ use std::str::FromStr;
 // 我们希望愿意参与网络贡献的节点，都注册bls公钥
 // 这样可以大大减少签名带来的存储开销
 lazy_static! {
-    static ref BLS_PUB_KEY_MAP: DashMap<String, bls_signatures::PublicKey> = DashMap::new();
+    static ref BLS_PUB_KEY_MAP: DashMap<String, BlsPublicKey> = DashMap::new();
 }
 
-// 定义一个 OnceCell 用于存储 Arc<HashMap<String, String>>
-// static HASHMAP_CELL: OnceCell<Arc<HashMap<String, bls_signatures::PublicKey>>> = OnceCell::new();
-//
-// fn init_pk_map(
-//     addresses: Vec<String>,
-//     pks: Vec<bls_signatures::PublicKey>,
-// ) -> &'static Arc<HashMap<String, bls_signatures::PublicKey>> {
-//     HASHMAP_CELL.get_or_init(|| {
-//         let mut map = HashMap::new();
-//         for (i, address) in addresses.into_iter().enumerate() {
-//             map.insert(address.to_string(), pks[i].clone());
-//         }
-//         Arc::new(map)
-//     })
-// }
-
-pub fn get_bls_pub_key(address: String) -> Option<bls_signatures::PublicKey> {
-    BLS_PUB_KEY_MAP
-        .get(&address)
-        .map(|entry| *entry.value())
+pub fn get_bls_pub_key(address: String) -> Option<BlsPublicKey> {
+    BLS_PUB_KEY_MAP.get(&address).map(|entry| *entry.value())
 }
-pub fn insert_bls_pub_key(address: String, public_key: bls_signatures::PublicKey) {
+pub fn insert_bls_pub_key(address: String, public_key: BlsPublicKey) {
     BLS_PUB_KEY_MAP.insert(address, public_key);
 }
 
@@ -49,8 +35,8 @@ pub struct Wallet {
     pub secret_key: SecretKey,
     pub public_key: PublicKey,
     // blsKey用于对网络贡献度和pos投票进行签名
-    pub bls_private_key: PrivateKey,
-    pub bls_public_key: bls_signatures::PublicKey,
+    pub bls_private_key: BlsSecretKey,
+    pub bls_public_key: BlsPublicKey,
     pub address: String,
 }
 
@@ -60,8 +46,9 @@ impl Wallet {
 
         let (secret_key, public_key) = secp.generate_keypair(&mut rand::thread_rng());
         let address = Wallet::public_key_to_address(public_key);
-        let bls_private_key = PrivateKey::new(secret_key.secret_bytes());
-        let bls_public_key = bls_private_key.public_key();
+        let bls_private_key =
+            BlsSecretKey::key_gen(secret_key.secret_bytes().as_slice(), &[]).unwrap();
+        let bls_public_key = bls_private_key.sk_to_pk();
         insert_bls_pub_key(address.clone(), bls_public_key);
         Wallet {
             secret_key,
@@ -88,8 +75,10 @@ impl Wallet {
         let secp = Secp256k1::new();
         let public_key = secret_key.public_key(&secp);
         let address = Wallet::public_key_to_address(public_key);
-        let bls_private_key = PrivateKey::new(secret_key.secret_bytes());
-        let bls_public_key = bls_private_key.public_key();
+
+        let bls_private_key =
+            BlsSecretKey::key_gen(secret_key.secret_bytes().as_slice(), &[]).unwrap();
+        let bls_public_key = bls_private_key.sk_to_pk();
         Ok(Wallet {
             secret_key,
             public_key,
@@ -127,8 +116,8 @@ impl Wallet {
     }
 
     pub fn sign_by_bls(&self, msg: Vec<u8>) -> String {
-        let sign = self.bls_private_key.sign(msg);
-        format!("0x{}", encode(sign.as_bytes()))
+        let sign = self.bls_private_key.sign(msg.as_slice(), &[], &[]);
+        format!("0x{}", encode(sign.to_bytes()))
     }
 
     fn recover_pubkey(msg: Vec<u8>, mut signature: String) -> Result<PublicKey, WalletError> {
@@ -176,7 +165,10 @@ impl Wallet {
                 return false;
             }
         };
-        self.bls_public_key.verify(signature, msg)
+        match signature.verify(true, msg.as_slice(), &[], &[], &self.bls_public_key, true) {
+            BLST_ERROR::BLST_SUCCESS => true,
+            _ => false,
+        }
     }
 
     pub fn verify_by_address(msg: Vec<u8>, signature: String, address: String) -> bool {
@@ -192,18 +184,17 @@ impl Wallet {
         recovery_address == address
     }
 
-    pub fn verify_bls_with_pk(
-        msg: Vec<u8>,
-        signature: String,
-        public_key: bls_signatures::PublicKey,
-    ) -> bool {
+    pub fn verify_bls_with_pk(msg: Vec<u8>, signature: String, public_key: BlsPublicKey) -> bool {
         let signature = match Wallet::bls_signature_from_string(signature) {
             Ok(signature) => signature,
             Err(e) => {
                 return false;
             }
         };
-        public_key.verify(signature, msg)
+        match signature.verify(true, msg.as_slice(), &[], &[], &public_key, true) {
+            BLST_ERROR::BLST_SUCCESS => true,
+            _ => false,
+        }
     }
 
     pub fn bls_signature_from_string(mut signature: String) -> Result<Signature, WalletError> {
@@ -211,7 +202,8 @@ impl Wallet {
             signature = signature[2..].to_string();
         }
         let signature_bytes = decode(&signature)?;
-        let signature = Signature::from_bytes(signature_bytes.as_slice())?;
+
+        let signature = Signature::from_bytes(signature_bytes.as_slice()).unwrap();
         Ok(signature)
     }
 
@@ -219,13 +211,16 @@ impl Wallet {
         if signatures.is_empty() {
             return String::new();
         }
-        let aggregated_signature = aggregate(&signatures).unwrap();
-        format!("0x{}", encode(aggregated_signature.as_bytes()))
+        let mut agg_sig = AggregateSignature::from_signature(&signatures[0]);
+        for sig in &signatures[1..] {
+            agg_sig.add_signature(sig, true).unwrap();
+        }
+        format!("0x{}", encode(agg_sig.to_signature().to_bytes()))
     }
 
     pub fn bls_aggregated_verify(
         messages: Vec<Vec<u8>>,
-        public_keys: Vec<bls_signatures::PublicKey>,
+        public_keys: Vec<BlsPublicKey>,
         signature: String,
     ) -> bool {
         let signature = match Wallet::bls_signature_from_string(signature) {
@@ -235,11 +230,20 @@ impl Wallet {
             }
         };
         let messages: Vec<&[u8]> = messages.iter().map(|m| m.as_slice()).collect();
-        let result = verify_messages(&signature, messages.as_slice(), public_keys.as_slice());
-        result
+        let public_keys: Vec<&blst::min_sig::PublicKey> = public_keys.iter().map(|pk| pk).collect();
+        match signature.aggregate_verify(
+            true,
+            messages.as_slice(),
+            &[],
+            public_keys.as_slice(),
+            true,
+        ) {
+            BLST_ERROR::BLST_SUCCESS => true,
+            _ => false,
+        }
     }
 
-    fn print(&self) {
+    pub(crate) fn print(&self) {
         info!("Secret Key: 0x{}", encode(self.secret_key.secret_bytes()));
         let public_key_bytes = &self.public_key.serialize_uncompressed()[1..];
         info!("Public Key: 0x{}", encode(public_key_bytes));
@@ -274,15 +278,9 @@ impl From<ParseIntError> for WalletError {
     }
 }
 
-impl From<Error> for WalletError {
-    fn from(_: Error) -> Self {
-        WalletError::InvalidSignature
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bls_signatures::{aggregate, verify, verify_messages};
 
     #[test]
     fn new_wallet() {
@@ -339,19 +337,19 @@ mod tests {
         let wallet2 = Wallet::new();
         let mut signatures = Vec::new();
         let mut public_keys = Vec::new();
-        let signature1 = wallet1.bls_private_key.sign(message1.as_bytes());
+        let signature1 = wallet1.sign_by_bls(message1.as_bytes().to_vec());
         signatures.push(signature1);
-        let signature2 = wallet2.bls_private_key.sign(message2.as_bytes());
+        let signature2 = wallet2.sign_by_bls(message2.as_bytes().to_vec());
         signatures.push(signature2);
         public_keys.push(wallet1.bls_public_key);
         public_keys.push(wallet2.bls_public_key);
-        let aggregated_signature = aggregate(&signatures).unwrap();
-        let messages = vec![message1.as_bytes(), message2.as_bytes()];
-        let result = verify_messages(
-            &aggregated_signature,
-            messages.as_slice(),
-            public_keys.as_slice(),
-        );
+        let signatures: Vec<Signature> = signatures
+            .iter()
+            .map(|s| Wallet::bls_signature_from_string(s.clone()).unwrap())
+            .collect();
+        let aggregated_signature = Wallet::bls_aggregated_sign(signatures);
+        let messages = vec![message1.as_bytes().to_vec(), message2.as_bytes().to_vec()];
+        let result = Wallet::bls_aggregated_verify(messages, public_keys, aggregated_signature);
         assert!(result);
     }
 }
