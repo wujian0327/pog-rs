@@ -1,4 +1,5 @@
 use crate::blockchain::block::Block;
+use log::error;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -79,6 +80,16 @@ impl Blockchain {
         for x in last_five {
             x.simple_print_no_transaction_detail();
         }
+    }
+
+    pub async fn write_to_file(&self) {
+        let json = serde_json::to_vec(&self.blocks).unwrap();
+        match tokio::fs::write("blockchain.json", json).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error writing blockchain file: {}", e);
+            }
+        };
     }
 }
 

@@ -382,6 +382,7 @@ impl Node {
                 MessageType::PRINT_BLOCKCHAIN => {
                     info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
                     self.blockchain.read().await.simple_print_last_five_block();
+                    self.blockchain.read().await.write_to_file().await;
                 }
                 _ => {}
             }

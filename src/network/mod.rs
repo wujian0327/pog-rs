@@ -47,7 +47,8 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
     info!("generate nodes");
 
     //4. gen the network graph
-    let graph = graph::random_graph(nodes_address.clone(), 0.3);
+    // let graph = graph::random_graph(nodes_address.clone(), 0.3);
+    let graph = graph::random_graph_with_ba_netwotk(nodes_address.clone());
     info!("generate network graph");
 
     //deal the node neighborhoods
