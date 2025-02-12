@@ -1,5 +1,3 @@
-mod blst_test;
-
 use crate::tools::Hasher;
 use blst::min_sig::{AggregateSignature, SecretKey as BlsSecretKey};
 use blst::min_sig::{PublicKey as BlsPublicKey, Signature};

@@ -222,7 +222,7 @@ impl Node {
                         let mut skip = false;
                         for cache in transactions_cache.iter() {
                             if cache.transaction.hash == transaction_paths.transaction.hash
-                                && cache.paths.len() <= transaction_paths.paths.len()
+                            // && cache.paths.len() <= transaction_paths.paths.len()
                             {
                                 skip = true;
                                 break;
@@ -381,8 +381,11 @@ impl Node {
                 }
                 MessageType::PRINT_BLOCKCHAIN => {
                     info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
-                    self.blockchain.read().await.simple_print_last_five_block();
-                    self.blockchain.read().await.write_to_file().await;
+                    self.blockchain
+                        .read()
+                        .await
+                        .write_to_file_last_block_simple()
+                        .await;
                 }
                 _ => {}
             }

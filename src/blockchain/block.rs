@@ -163,21 +163,26 @@ impl Block {
         }
     }
 
-    pub fn simple_print_no_transaction_detail(&self) {
-        info!("Block[{}]:", self.header.index);
-        info!("\t epoch:{}:", self.header.epoch);
-        info!("\t slot:{}:", self.header.slot);
-        info!("\t miner:{}:", self.header.miner);
-        info!("\t timestamp:{}:", self.header.timestamp);
+    pub fn simple_print_no_transaction_string(&self) -> String {
+        let mut s = format!("Block[{}]: \n", self.header.index);
+        s.push_str(format!("\t epoch:{} \n", self.header.epoch).as_str());
+        s.push_str(format!("\t slot:{} \n", self.header.slot).as_str());
+        s.push_str(format!("\t miner:{} \n", self.header.miner).as_str());
+        s.push_str(format!("\t timestamp:{} \n", self.header.timestamp).as_str());
         let trans_hash: Vec<String> = self
             .body
             .transactions
             .iter()
             .map(|x| x.hash.to_string())
             .collect();
-        info!("\t transactions[{}]", trans_hash.join(","));
+        s.push_str(format!("\t transactions[{}]\n", trans_hash.join(",")).as_str());
         let paths: Vec<String> = self.body.paths.iter().map(|p| p.paths.join("->")).collect();
-        info!("\t paths[{}]", paths.join(","));
+        s.push_str(format!("\t paths[{}]\n", paths.join(",")).as_str());
+        s
+    }
+
+    pub fn simple_print_no_transaction_detail(&self) {
+        info!("{}", self.simple_print_no_transaction_string());
     }
 }
 

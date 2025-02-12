@@ -2,6 +2,7 @@ use crate::blockchain::block::Block;
 use log::error;
 use std::collections::HashSet;
 use std::fmt;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Clone)]
 pub struct Blockchain {
@@ -82,14 +83,38 @@ impl Blockchain {
         }
     }
 
-    pub async fn write_to_file(&self) {
+    pub async fn write_to_file_all_json(&self) {
+        let path = "blockchain.json";
         let json = serde_json::to_vec(&self.blocks).unwrap();
-        match tokio::fs::write("blockchain.json", json).await {
+        match tokio::fs::write(path, json).await {
             Ok(_) => {}
             Err(e) => {
                 error!("Error writing blockchain file: {}", e);
             }
         };
+    }
+
+    pub async fn write_to_file_last_block_simple(&self) {
+        let path = "blockchain.txt";
+        if self.get_lash_index() == 0 {
+            let _ = tokio::fs::remove_file(path).await;
+        }
+        let mut file = match tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .await
+        {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Error writing blockchain file: {}", e);
+                return;
+            }
+        };
+        let string = self.get_last_block().simple_print_no_transaction_string();
+        if let Err(e) = file.write_all(string.as_bytes()).await {
+            error!("Error writing blockchain file: {}", e);
+        }
     }
 }
 
