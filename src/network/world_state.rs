@@ -42,7 +42,6 @@ pub struct SlotManager {
 impl WorldState {
     pub fn new(genesis_block: Block) -> (Self, Sender<Message>, Receiver<Message>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
-        let nodes_balance: HashMap<String, u64> = HashMap::new();
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
         (
             WorldState {

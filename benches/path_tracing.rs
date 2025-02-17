@@ -1,9 +1,7 @@
-use blst::min_pk::SecretKey;
 use criterion::{criterion_group, criterion_main, Criterion};
-use pog::blockchain::path::{concat_tx_hash_with_to_hash_static, Path};
+use pog::blockchain::path::concat_tx_hash_with_to_hash_static;
 use pog::blockchain::transaction::Transaction;
 use pog::wallet::Wallet;
-use rand::RngCore;
 
 fn sign_paths_with_bls(wallets: Vec<Wallet>, tx_hash: String, n: usize) {
     for i in 1..n + 1 {

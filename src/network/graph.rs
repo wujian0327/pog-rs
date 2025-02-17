@@ -1,13 +1,15 @@
 use crate::tools::short_hash;
-use log::info;
+use log::{error, info};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
+use petgraph::prelude::EdgeRef;
 use petgraph::Graph;
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;
+use tokio::io::AsyncWriteExt;
 
 //Barabási–Albert 模型，用于生成无标度网络
 struct BANetwork {
@@ -58,17 +60,23 @@ impl BANetwork {
 
     fn add_node(&mut self, m: usize) {
         let new_node = self.degrees.len();
-        self.adjacency.insert(new_node, HashSet::new());
-        self.degrees.push(0);
+        let mut set: HashSet<usize> = HashSet::new();
+        let mut degree = 0;
 
         for _ in 0..m {
             let target = self.choose_node();
-            self.adjacency.get_mut(&new_node).unwrap().insert(target);
+            set.insert(target);
+            degree += 1;
+        }
+
+        for target in set.clone() {
             self.adjacency.get_mut(&target).unwrap().insert(new_node);
-            self.degrees[new_node] += 1;
             self.degrees[target] += 1;
             self.total_edges += 2; // 双向边，各加1度
         }
+
+        self.adjacency.insert(new_node, set);
+        self.degrees.push(degree);
     }
 
     fn generate_ba_network(n_nodes: usize, m0: usize, m: usize) -> BANetwork {
@@ -106,16 +114,12 @@ pub fn random_graph(nodes_address: Vec<String>, probability: f64) -> Graph<Strin
         let node = graph_clone.node_weight_mut(i).unwrap();
         *node = short_hash(node.clone());
     });
-    // 打印图的 DOT 表示
-    info!(
-        "{:?}",
-        Dot::with_config(&graph_clone, &[Config::EdgeNoLabel])
-    );
+
     print_graph(&graph_clone);
     graph
 }
 
-pub fn random_graph_with_ba_netwotk(nodes_address: Vec<String>) -> Graph<String, ()> {
+pub fn random_graph_with_ba_network(nodes_address: Vec<String>) -> Graph<String, ()> {
     let node_number = nodes_address.len();
     let ba_network = BANetwork::generate_ba_network(node_number, 3, 2);
     let adj = ba_network.adjacency;
@@ -136,43 +140,29 @@ pub fn random_graph_with_ba_netwotk(nodes_address: Vec<String>) -> Graph<String,
     let mut graph_clone = graph.clone();
     graph_clone.node_indices().for_each(|i| {
         let node = graph_clone.node_weight_mut(i).unwrap();
-        *node = short_hash(node.clone());
+        *node = short_hash(node.clone())[2..].to_string();
     });
-    // 打印图的 DOT 表示
-    info!(
-        "{:?}",
-        Dot::with_config(&graph_clone, &[Config::EdgeNoLabel])
-    );
+
     print_graph(&graph_clone);
     graph
 }
 
 pub fn print_graph(graph: &Graph<String, ()>) {
-    {
-        let dot_string = format!("{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel]));
-        let mut file = File::create("graph.dot").expect("Unable to create file");
-        file.write_all(dot_string.as_bytes())
-            .expect("Unable to write data to file");
-
-        file.flush().expect("Unable to flush data to file");
-        println!("DOT format written to 'graph.dot'");
-    }
-
-    let output = Command::new("cmd")
-        .arg("/C")
-        .arg("dot")
-        .arg("-Tpng")
-        .arg("graph.dot")
-        .arg("-o")
-        .arg("graph.png")
-        .output();
-
-    match output {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Failed to eprint graph: {}", e);
+    let mut vec: Vec<(String, String)> = vec![];
+    for edge_ref in graph.edge_references() {
+        let src = edge_ref.source();
+        let dst = edge_ref.target();
+        let from = graph.node_weight(src).unwrap().to_string();
+        let to = graph.node_weight(dst).unwrap().to_string();
+        if vec.iter().find(|&x| x.0 == to && x.1 == from).is_some() {
+            continue;
         }
+        vec.push((from, to));
     }
+
+    let path = "graph.json";
+    let mut file = File::create(path).unwrap();
+    serde_json::to_writer_pretty(&mut file, &vec).unwrap();
 }
 
 #[cfg(test)]
@@ -181,7 +171,8 @@ mod tests {
     use log::info;
     use petgraph::dot::{Config, Dot};
     use petgraph::graph::NodeIndex;
-    use petgraph::visit::IntoEdges;
+
+    use petgraph::prelude::EdgeRef;
     use petgraph::Graph;
     use rand::Rng;
     use std::collections::HashMap;
@@ -211,7 +202,61 @@ mod tests {
     }
 
     #[test]
+    fn BANetwork_test() {
+        let num = 1000;
+        let ba_network = BANetwork::generate_ba_network(num, 3, 2);
+        let adj = ba_network.adjacency;
+
+        for (x, y) in adj.clone() {
+            if y.contains(&x) {
+                panic!("Wrong");
+            }
+        }
+
+        if adj.len() != num {
+            panic!("Wrong");
+        }
+
+        let mut graph = Graph::<String, ()>::new();
+        let mut node_map = HashMap::new();
+        for (x, _) in adj.clone() {
+            let node = graph.add_node(x.to_string());
+            node_map.insert(x, node);
+        }
+        for (x, edge) in adj {
+            let from = node_map.get(&x).unwrap();
+            for y in edge {
+                let to = node_map.get(&y).unwrap();
+                graph.add_edge(from.clone(), to.clone(), ());
+            }
+        }
+
+        let mut vec: Vec<(String, String)> = vec![];
+        for edge_ref in graph.edge_references() {
+            let src = edge_ref.source();
+            let dst = edge_ref.target();
+            let from = graph.node_weight(src).unwrap().to_string();
+            let to = graph.node_weight(dst).unwrap().to_string();
+            if vec.iter().find(|&x| x.0 == to && x.1 == from).is_some() {
+                continue;
+            }
+            vec.push((from, to));
+        }
+
+        for x in vec {
+            if x.0 == x.1 {
+                panic!("Wrong");
+            }
+        }
+    }
+
+    #[test]
     fn graph() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
         let mut graph = Graph::<&str, &str>::new();
 
         let a = graph.add_node("A");
