@@ -7,7 +7,7 @@ use futures::future::join_all;
 use log::info;
 use rand::prelude::*;
 use rand::thread_rng;
-use rand_distr::{Distribution, Exp, Poisson};
+use rand_distr::{Distribution, Poisson};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
@@ -185,33 +185,33 @@ impl TransactionGenerator {
     }
 }
 
-struct Printer {
-    nodes_sender: HashMap<String, Sender<Message>>,
-    interval: Duration,
-}
-
-impl Printer {
-    fn new(nodes_sender: HashMap<String, Sender<Message>>, interval: Duration) -> Printer {
-        Printer {
-            nodes_sender,
-            interval,
-        }
-    }
-
-    async fn run(&mut self) {
-        let mut interval = time::interval(self.interval);
-        loop {
-            interval.tick().await;
-
-            let node = self.nodes_sender.iter().choose(&mut rand::thread_rng());
-            node.unwrap()
-                .1
-                .send(Message::new_print_blockchain_msg())
-                .await
-                .unwrap();
-        }
-    }
-}
+// struct Printer {
+//     nodes_sender: HashMap<String, Sender<Message>>,
+//     interval: Duration,
+// }
+//
+// impl Printer {
+//     fn new(nodes_sender: HashMap<String, Sender<Message>>, interval: Duration) -> Printer {
+//         Printer {
+//             nodes_sender,
+//             interval,
+//         }
+//     }
+//
+//     async fn run(&mut self) {
+//         let mut interval = time::interval(self.interval);
+//         loop {
+//             interval.tick().await;
+//
+//             let node = self.nodes_sender.iter().choose(&mut rand::thread_rng());
+//             node.unwrap()
+//                 .1
+//                 .send(Message::new_print_blockchain_msg())
+//                 .await
+//                 .unwrap();
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

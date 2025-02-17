@@ -6,7 +6,7 @@ use crate::network::message::{Message, MessageType};
 use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
@@ -137,7 +137,7 @@ impl Node {
     pub async fn run(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
             match msg.msg_type {
-                MessageType::SEND_BLOCK => {
+                MessageType::SendBlock => {
                     let block = match Block::from_json(msg.data) {
                         Ok(b) => b,
                         Err(e) => {
@@ -197,7 +197,7 @@ impl Node {
                         });
                     }
                 }
-                MessageType::SEND_TRANSACTION_PATHS => {
+                MessageType::SendTransactionPaths => {
                     let transaction_paths = match TransactionPaths::from_json(msg.data) {
                         Ok(t) => t,
                         Err(e) => {
@@ -280,7 +280,7 @@ impl Node {
                     }
                 }
 
-                MessageType::GENERATE_BLOCK => {
+                MessageType::GenerateBlock => {
                     let last_block_time = {
                         self.blockchain
                             .read()
@@ -321,7 +321,7 @@ impl Node {
                         });
                     }
                 }
-                MessageType::GENERATE_TRANSACTION_PATHS => {
+                MessageType::GenerateTransactionPaths => {
                     let to = match String::from_utf8(msg.data) {
                         Ok(to) => to,
                         Err(e) => {
@@ -371,7 +371,7 @@ impl Node {
                         });
                     }
                 }
-                MessageType::SEND_RANDAO_SEED => {
+                MessageType::SendRandaoSeed => {
                     let seed = RandaoSeed::generate_seed();
                     let signature = self.wallet.sign(Vec::from(seed));
                     let randao_seed = RandaoSeed {
@@ -388,7 +388,7 @@ impl Node {
                         .await
                         .unwrap();
                 }
-                MessageType::BECOME_VALIDATOR => {
+                MessageType::BecomeValidator => {
                     debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);
                     self.world_state_sender
                         .send(Message::new_receive_become_validator_msg(Validator::new(
@@ -398,7 +398,7 @@ impl Node {
                         .await
                         .unwrap();
                 }
-                MessageType::UPDATE_SLOT => {
+                MessageType::UpdateSlot => {
                     let slot = match SlotManager::from_json(msg.data) {
                         Ok(t) => t,
                         Err(e) => {
@@ -410,7 +410,7 @@ impl Node {
                     self.slot = slot.current_slot;
                     self.epoch = slot.current_epoch;
                 }
-                MessageType::PRINT_BLOCKCHAIN => {
+                MessageType::PrintBlockchain => {
                     info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
                     self.blockchain
                         .read()

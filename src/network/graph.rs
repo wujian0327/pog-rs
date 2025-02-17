@@ -8,7 +8,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;
-use tokio::join;
 
 //Barabási–Albert 模型，用于生成无标度网络
 struct BANetwork {
@@ -131,7 +130,7 @@ pub fn random_graph_with_ba_netwotk(nodes_address: Vec<String>) -> Graph<String,
         let from = node_map.get(&nodes_address[x].clone()).unwrap();
         for y in edge {
             let to = node_map.get(&nodes_address[y].clone()).unwrap();
-            graph.add_edge(from.clone(), to.clone(), ());
+            graph.add_edge(*from, *to, ());
         }
     }
     let mut graph_clone = graph.clone();

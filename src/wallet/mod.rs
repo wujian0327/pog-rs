@@ -38,6 +38,12 @@ pub struct Wallet {
     pub address: String,
 }
 
+impl Default for Wallet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Wallet {
     pub fn new() -> Wallet {
         let secp = Secp256k1::new();
@@ -66,7 +72,7 @@ impl Wallet {
         }
         let secret_key = match SecretKey::from_str(secret_key.as_str()) {
             Ok(sk) => sk,
-            Err(e) => {
+            Err(_e) => {
                 return Err(WalletError::InvalidPrivateKeyString);
             }
         };
@@ -159,14 +165,14 @@ impl Wallet {
     fn verify_bls(&self, msg: Vec<u8>, signature: String) -> bool {
         let signature = match Wallet::bls_signature_from_string(signature) {
             Ok(signature) => signature,
-            Err(e) => {
+            Err(_e) => {
                 return false;
             }
         };
-        match signature.verify(true, msg.as_slice(), &[], &[], &self.bls_public_key, true) {
-            BLST_ERROR::BLST_SUCCESS => true,
-            _ => false,
-        }
+        matches!(
+            signature.verify(true, msg.as_slice(), &[], &[], &self.bls_public_key, true),
+            BLST_ERROR::BLST_SUCCESS
+        )
     }
 
     pub fn verify_by_address(msg: Vec<u8>, signature: String, address: String) -> bool {
@@ -185,14 +191,14 @@ impl Wallet {
     pub fn verify_bls_with_pk(msg: Vec<u8>, signature: String, public_key: BlsPublicKey) -> bool {
         let signature = match Wallet::bls_signature_from_string(signature) {
             Ok(signature) => signature,
-            Err(e) => {
+            Err(_e) => {
                 return false;
             }
         };
-        match signature.verify(true, msg.as_slice(), &[], &[], &public_key, true) {
-            BLST_ERROR::BLST_SUCCESS => true,
-            _ => false,
-        }
+        matches!(
+            signature.verify(true, msg.as_slice(), &[], &[], &public_key, true),
+            BLST_ERROR::BLST_SUCCESS
+        )
     }
 
     pub fn bls_signature_from_string(mut signature: String) -> Result<Signature, WalletError> {
@@ -228,17 +234,17 @@ impl Wallet {
             }
         };
         let messages: Vec<&[u8]> = messages.iter().map(|m| m.as_slice()).collect();
-        let public_keys: Vec<&blst::min_sig::PublicKey> = public_keys.iter().map(|pk| pk).collect();
-        match signature.aggregate_verify(
-            true,
-            messages.as_slice(),
-            &[],
-            public_keys.as_slice(),
-            true,
-        ) {
-            BLST_ERROR::BLST_SUCCESS => true,
-            _ => false,
-        }
+        let public_keys: Vec<&blst::min_sig::PublicKey> = public_keys.iter().collect();
+        matches!(
+            signature.aggregate_verify(
+                true,
+                messages.as_slice(),
+                &[],
+                public_keys.as_slice(),
+                true,
+            ),
+            BLST_ERROR::BLST_SUCCESS
+        )
     }
 
     pub(crate) fn print(&self) {

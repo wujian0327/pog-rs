@@ -18,12 +18,12 @@ use tokio::{task, time};
 /// 也可以用于与所有的节点进行通信
 pub struct WorldState {
     pub current_slot: Arc<RwLock<SlotManager>>,
-    pub slots: Vec<SlotManager>,
+    // pub slots: Vec<SlotManager>,
     pub validators: Arc<RwLock<Vec<Validator>>>,
     // sender和receiver要和WorldState解耦，独立返回
     // pub sender: Sender<Message>,
     // pub receiver: Receiver<Message>,
-    pub nodes_balance: HashMap<String, u64>,
+    // pub nodes_balance: HashMap<String, u64>,
     pub nodes_sender: HashMap<String, Sender<Message>>,
 }
 
@@ -54,10 +54,8 @@ impl WorldState {
                     next_seed: [0; 32],
                     start_timestamp: genesis_block.header.timestamp,
                 })),
-                slots: vec![],
                 validators: Arc::new(RwLock::new(vec![])),
 
-                nodes_balance,
                 nodes_sender,
             },
             sender,
@@ -146,7 +144,7 @@ impl WorldState {
                 while let Some(msg) = receiver.recv().await {
                     debug!("World State received msg type: {}", msg.msg_type);
                     match msg.msg_type {
-                        MessageType::RECEIVE_RANDAO_SEED => {
+                        MessageType::ReceiveRandaoSeed => {
                             let randao_seed = match RandaoSeed::from_json(msg.data) {
                                 Ok(t) => t,
                                 Err(e) => {
@@ -160,7 +158,7 @@ impl WorldState {
                                 current_slot.randao_seeds.push(randao_seed.clone());
                             }
                         }
-                        MessageType::RECEIVE_BECOME_VALIDATOR => {
+                        MessageType::ReceiveBecomeValidator => {
                             let validator = match Validator::from_json(msg.data) {
                                 Ok(t) => t,
                                 Err(e) => {

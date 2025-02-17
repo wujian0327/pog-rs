@@ -16,7 +16,7 @@ pub struct Message {
 impl Message {
     pub fn new_block_msg(block: Block, from: String) -> Message {
         Message {
-            msg_type: MessageType::SEND_BLOCK,
+            msg_type: MessageType::SendBlock,
             data: block.to_json(),
             from,
         }
@@ -24,7 +24,7 @@ impl Message {
 
     pub fn new_transaction_paths_msg(transaction_paths: TransactionPaths, from: String) -> Message {
         Message {
-            msg_type: MessageType::SEND_TRANSACTION_PATHS,
+            msg_type: MessageType::SendTransactionPaths,
             data: transaction_paths.to_json(),
             from,
         }
@@ -32,7 +32,7 @@ impl Message {
 
     pub fn new_generate_block_msg() -> Message {
         Message {
-            msg_type: MessageType::GENERATE_BLOCK,
+            msg_type: MessageType::GenerateBlock,
             data: vec![],
             from: "".to_string(),
         }
@@ -40,7 +40,7 @@ impl Message {
 
     pub fn new_generate_transaction_path_msg(to: String) -> Message {
         Message {
-            msg_type: MessageType::GENERATE_TRANSACTION_PATHS,
+            msg_type: MessageType::GenerateTransactionPaths,
             data: to.into_bytes(),
             from: "".to_string(),
         }
@@ -48,7 +48,7 @@ impl Message {
 
     pub fn new_send_randao_seed_msg() -> Message {
         Message {
-            msg_type: MessageType::SEND_RANDAO_SEED,
+            msg_type: MessageType::SendRandaoSeed,
             data: vec![],
             from: "".to_string(),
         }
@@ -56,7 +56,7 @@ impl Message {
 
     pub fn new_receive_random_seed_msg(randao_seed: RandaoSeed) -> Message {
         Message {
-            msg_type: MessageType::RECEIVE_RANDAO_SEED,
+            msg_type: MessageType::ReceiveRandaoSeed,
             data: randao_seed.to_json(),
             from: "".to_string(),
         }
@@ -64,7 +64,7 @@ impl Message {
 
     pub fn new_become_validator_msg() -> Message {
         Message {
-            msg_type: MessageType::BECOME_VALIDATOR,
+            msg_type: MessageType::BecomeValidator,
             data: vec![],
             from: "".to_string(),
         }
@@ -72,7 +72,7 @@ impl Message {
 
     pub fn new_receive_become_validator_msg(validator: Validator) -> Message {
         Message {
-            msg_type: MessageType::RECEIVE_BECOME_VALIDATOR,
+            msg_type: MessageType::ReceiveBecomeValidator,
             data: validator.to_json(),
             from: "".to_string(),
         }
@@ -80,7 +80,7 @@ impl Message {
 
     pub fn new_update_slot_msg(slot: SlotManager) -> Message {
         Message {
-            msg_type: MessageType::UPDATE_SLOT,
+            msg_type: MessageType::UpdateSlot,
             data: slot.to_json(),
             from: "".to_string(),
         }
@@ -88,7 +88,7 @@ impl Message {
 
     pub fn new_print_blockchain_msg() -> Message {
         Message {
-            msg_type: MessageType::PRINT_BLOCKCHAIN,
+            msg_type: MessageType::PrintBlockchain,
             data: vec![],
             from: "".to_string(),
         }
@@ -97,53 +97,53 @@ impl Message {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageType {
-    SEND_BLOCK,
-    SEND_TRANSACTION_PATHS,
-    GENERATE_BLOCK,
-    GENERATE_TRANSACTION_PATHS,
-    SEND_RANDAO_SEED,
-    RECEIVE_RANDAO_SEED,
-    BECOME_VALIDATOR,
-    RECEIVE_BECOME_VALIDATOR,
-    UPDATE_SLOT,
-    PRINT_BLOCKCHAIN,
+    SendBlock,
+    SendTransactionPaths,
+    GenerateBlock,
+    GenerateTransactionPaths,
+    SendRandaoSeed,
+    ReceiveRandaoSeed,
+    BecomeValidator,
+    ReceiveBecomeValidator,
+    UpdateSlot,
+    PrintBlockchain,
 }
 
 impl Display for MessageType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match *self {
-            MessageType::SEND_BLOCK => {
-                write!(f, "SEND_BLOCK")
+            MessageType::SendBlock => {
+                write!(f, "SendBlock")
             }
-            MessageType::SEND_TRANSACTION_PATHS => {
-                write!(f, "SEND_TRANSACTION_PATHS")
+            MessageType::SendTransactionPaths => {
+                write!(f, "SendTransactionPaths")
             }
-            MessageType::GENERATE_BLOCK => {
-                write!(f, "GENERATE_BLOCK")
+            MessageType::GenerateBlock => {
+                write!(f, "GenerateBlock")
             }
-            MessageType::SEND_RANDAO_SEED => {
-                write!(f, "SEND_RANDAO_SEED")
+            MessageType::SendRandaoSeed => {
+                write!(f, "SendRandaoSeed")
             }
-            MessageType::RECEIVE_RANDAO_SEED => {
-                write!(f, "RECEIVE_RANDAO_SEED")
+            MessageType::ReceiveRandaoSeed => {
+                write!(f, "ReceiveRandaoSeed")
             }
-            MessageType::BECOME_VALIDATOR => {
-                write!(f, "BECOME_VALIDATOR")
-            }
-
-            MessageType::RECEIVE_BECOME_VALIDATOR => {
-                write!(f, "RECEIVE_BECOME_VALIDATOR")
+            MessageType::BecomeValidator => {
+                write!(f, "BecomeValidator")
             }
 
-            MessageType::UPDATE_SLOT => {
-                write!(f, "UPDATE_SLOT")
-            }
-            MessageType::GENERATE_TRANSACTION_PATHS => {
-                write!(f, "GENERATE_TRANSACTION_PATHS")
+            MessageType::ReceiveBecomeValidator => {
+                write!(f, "ReceiveBecomeValidator")
             }
 
-            MessageType::PRINT_BLOCKCHAIN => {
-                write!(f, "PRINT_BLOCKCHAIN")
+            MessageType::UpdateSlot => {
+                write!(f, "UpdateSlot")
+            }
+            MessageType::GenerateTransactionPaths => {
+                write!(f, "GenerateTransactionPaths")
+            }
+
+            MessageType::PrintBlockchain => {
+                write!(f, "PrintBlockchain")
             }
         }
     }

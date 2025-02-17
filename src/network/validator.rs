@@ -2,12 +2,11 @@ use crate::network::node::Node;
 use crate::network::validator::ValidatorError::NOValidatorError;
 use crate::tools;
 use crate::wallet::Wallet;
-use log::{error, info};
+use log::error;
 use num_bigint::{BigUint, ToBigUint};
 use rand::rngs::{OsRng, StdRng};
 use rand::{Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -21,7 +20,7 @@ impl Validator {
         Validator { address, stake }
     }
 
-    pub fn from_node(node: Node, stake: u64) -> Self {
+    fn from_node(node: Node, stake: u64) -> Self {
         Validator::new(node.wallet.address.clone(), stake)
     }
 
@@ -178,6 +177,7 @@ mod tests {
     use super::*;
     use crate::blockchain::block::Block;
     use crate::blockchain::blockchain::Blockchain;
+    use log::info;
 
     #[test]
     fn randao() {
