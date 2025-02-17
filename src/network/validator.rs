@@ -2,7 +2,7 @@ use crate::network::node::Node;
 use crate::network::validator::ValidatorError::NOValidatorError;
 use crate::tools;
 use crate::wallet::Wallet;
-use log::info;
+use log::{error, info};
 use num_bigint::{BigUint, ToBigUint};
 use rand::rngs::{OsRng, StdRng};
 use rand::{Rng, RngCore, SeedableRng};
@@ -115,7 +115,7 @@ impl Randao {
                 .iter()
                 .any(|validator| validator.address.eq(&v.address))
             {
-                info!("Randao combine seed warning: this seed is not from validators");
+                error!("Randao combine seed warning: this seed is not from validators");
                 continue;
             }
             let valid = Wallet::verify_by_address(Vec::from(v.seed), v.signature, v.address);
@@ -124,7 +124,7 @@ impl Randao {
                     result[i] ^= v.seed[i];
                 }
             } else {
-                info!("Randao combine seed warning: invalid seed");
+                error!("Randao combine seed warning: invalid seed");
             }
         }
         tools::Hasher::hash(Vec::from(result))

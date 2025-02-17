@@ -2,7 +2,7 @@ use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::tools;
 use crate::wallet::Wallet;
-use hex::encode;
+use hex::{decode, encode};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -82,7 +82,8 @@ impl Block {
                 return Err(BlockError::InvalidBlockPath);
             }
         }
-        let merkle_root = Block::cal_merkle_root(body.transactions.clone());
+        let hash_vec = body.transactions.iter().map(|t| t.hash.clone()).collect();
+        let merkle_root = Block::cal_merkle_root(hash_vec);
         let header = Header::new(index, epoch, slot, merkle_root, wallet.address, parent_hash);
         Ok(Block { header, body })
     }
@@ -105,9 +106,9 @@ impl Block {
         true
     }
 
-    fn cal_merkle_root(mut leaves: Vec<Transaction>) -> String {
+    fn cal_merkle_root(mut leaves: Vec<String>) -> String {
         if leaves.len() == 1 {
-            return leaves[0].clone().hash;
+            return leaves[0].clone();
         }
 
         if leaves.len() % 2 != 0 {
@@ -116,9 +117,10 @@ impl Block {
 
         let mut next_level = Vec::new();
         for pair in leaves.chunks(2) {
-            let mut combined = pair[0].clone();
-            combined.hash.push_str(pair[1].hash.as_str());
-            next_level.push(combined);
+            let mut combined = decode(pair[0].clone()).unwrap();
+            combined.append(&mut decode(pair[1].clone()).unwrap());
+            let hash = encode(combined);
+            next_level.push(hash);
         }
         Block::cal_merkle_root(next_level)
     }

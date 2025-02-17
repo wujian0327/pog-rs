@@ -4,9 +4,10 @@ use crate::network::message::Message;
 use crate::network::node::{Neighbor, Node};
 use crate::network::world_state::WorldState;
 use futures::future::join_all;
-use futures::FutureExt;
 use log::info;
-use rand::seq::IteratorRandom;
+use rand::prelude::*;
+use rand::thread_rng;
+use rand_distr::{Distribution, Exp, Poisson};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
@@ -22,11 +23,11 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
     //1. new blockchain
     let genesis_block = Block::gen_genesis_block();
     let bc = Blockchain::new(genesis_block.clone());
-    info!("generate genesis block");
+    info!("Generate genesis block");
 
     //2. world state
     let (mut world, world_sender, world_receiver) = WorldState::new(genesis_block);
-    info!("generate world state");
+    info!("Generate world state");
 
     //3. nodes
     let mut node_map: HashMap<String, Node> = (0..node_num)
@@ -44,12 +45,12 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
         .map(|(address, node)| (address.clone(), node.index))
         .collect();
     let nodes_address: Vec<String> = node_map.keys().cloned().collect();
-    info!("generate nodes");
+    info!("Generate {} nodes", node_num);
 
     //4. gen the network graph
     // let graph = graph::random_graph(nodes_address.clone(), 0.3);
     let graph = graph::random_graph_with_ba_netwotk(nodes_address.clone());
-    info!("generate network graph");
+    info!("Generate network graph");
 
     //deal the node neighborhoods
     for edge in graph.edge_indices() {
@@ -87,14 +88,15 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
 
     for (_, mut node) in node_map {
         let t = tokio::spawn(async move {
-            node.run().await;
             info!("Node[{}] running", node.index);
+            node.run().await;
         });
         tasks.push(t);
     }
 
     //become validator
-    for (_, sender) in nodes_sender.clone() {
+    for (k, sender) in nodes_sender.clone() {
+        info!("Node[{}] become validator", nodes_index.get(&k).unwrap());
         sender
             .send(Message::new_become_validator_msg())
             .await
@@ -109,15 +111,19 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
     );
 
     let t = tokio::spawn(async move {
+        info!(
+            "Transaction Generator running, {} tx/s",
+            trans_num_per_second
+        );
         tg.run().await;
     });
     tasks.push(t);
 
-    let mut printer = Printer::new(nodes_sender.clone(), Duration::from_secs(5));
-    let t = tokio::spawn(async move {
-        printer.run().await;
-    });
-    tasks.push(t);
+    // let mut printer = Printer::new(nodes_sender.clone(), Duration::from_secs(5));
+    // let t = tokio::spawn(async move {
+    //     printer.run().await;
+    // });
+    // tasks.push(t);
 
     let _ = join_all(tasks).await;
 }
@@ -149,13 +155,14 @@ impl TransactionGenerator {
 
         loop {
             interval.tick().await;
-            info!(
-                "Transaction Generator send {} transaction in {}s",
-                self.trans_num_per_interval,
-                self.time_interval.as_secs()
-            );
-            for _ in 0..self.trans_num_per_interval {
-                let node = self.nodes_sender.iter().choose(&mut rand::thread_rng());
+            // 泊松分布生成器
+            let poisson = Poisson::new(self.trans_num_per_interval as f64).unwrap();
+
+            // 获取每秒生成的消息数
+            let num_messages: usize = poisson.sample(&mut thread_rng()) as usize;
+
+            for _ in 0..num_messages {
+                let node = self.nodes_sender.iter().choose(&mut thread_rng());
 
                 if let Some(node) = node {
                     let to = self
@@ -170,6 +177,10 @@ impl TransactionGenerator {
                         .unwrap();
                 }
             }
+            info!(
+                "[{}]Transaction generated (λ={})",
+                num_messages, self.trans_num_per_interval
+            );
         }
     }
 }
@@ -198,6 +209,47 @@ impl Printer {
                 .send(Message::new_print_blockchain_msg())
                 .await
                 .unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use log::info;
+    use rand::prelude::Distribution;
+    use rand::thread_rng;
+    use rand_distr::Poisson;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn poisson() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init();
+
+        let start_time = std::time::Instant::now();
+        let poisson_lambda = 10.0; // λ = 10
+
+        loop {
+            // 泊松分布生成器
+            let poisson = Poisson::new(poisson_lambda).unwrap();
+
+            // 获取每秒生成的消息数
+            let num_messages: usize = poisson.sample(&mut thread_rng()) as usize;
+
+            // 输出生成的消息
+            info!(
+                "[{:.3}s] [{}]Transaction generated (λ={}/s)",
+                start_time.elapsed().as_secs_f64(),
+                num_messages,
+                poisson_lambda
+            );
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            if start_time.elapsed().as_secs() > 5 {
+                break;
+            }
         }
     }
 }

@@ -3,7 +3,7 @@ use crate::network::message::{Message, MessageType};
 use crate::network::validator::{Randao, RandaoSeed, Validator};
 use crate::tools;
 use crate::tools::get_timestamp;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -85,8 +85,7 @@ impl WorldState {
             current_slot.current_epoch, current_slot.current_slot, next_seed
         );
 
-        let nodes_sender: Vec<Sender<Message>> =
-            self.nodes_sender.values().cloned().collect();
+        let nodes_sender: Vec<Sender<Message>> = self.nodes_sender.values().cloned().collect();
 
         //通知所有节点更新slot
         for sender in nodes_sender {
@@ -119,7 +118,7 @@ impl WorldState {
         //通知miner出块
         match self.nodes_sender.get(&miner_validator.address) {
             Some(sender) => {
-                info!(
+                debug!(
                     "World State find miner: {}",
                     miner_validator.address.clone()
                 );
@@ -145,13 +144,13 @@ impl WorldState {
             let shared_self = Arc::clone(&shared_self);
             task::spawn(async move {
                 while let Some(msg) = receiver.recv().await {
-                    info!("World State received msg type: {}", msg.msg_type);
+                    debug!("World State received msg type: {}", msg.msg_type);
                     match msg.msg_type {
                         MessageType::RECEIVE_RANDAO_SEED => {
                             let randao_seed = match RandaoSeed::from_json(msg.data) {
                                 Ok(t) => t,
                                 Err(e) => {
-                                    info!("World State error: {}", e);
+                                    error!("World State error: {}", e);
                                     continue;
                                 }
                             };
@@ -165,7 +164,7 @@ impl WorldState {
                             let validator = match Validator::from_json(msg.data) {
                                 Ok(t) => t,
                                 Err(e) => {
-                                    info!("World State error: {}", e);
+                                    error!("World State error: {}", e);
                                     continue;
                                 }
                             };
@@ -193,7 +192,7 @@ impl WorldState {
                 };
                 let deadline = Instant::now() + time_interval;
                 time::sleep_until(deadline).await;
-                info!("World State time trigger: {}", tools::get_time_string());
+                debug!("World State time trigger: {}", tools::get_time_string());
                 {
                     let mut shared_self = shared_self.write().await;
                     shared_self.next_slot().await;
@@ -345,7 +344,10 @@ mod tests {
         let transaction = Transaction::new(node1_wallet.address.clone(), 0, node0_wallet.clone());
         let transaction_paths = TransactionPaths::new(transaction);
         node0_sender
-            .send(Message::new_transaction_paths_msg(transaction_paths))
+            .send(Message::new_transaction_paths_msg(
+                transaction_paths,
+                "".to_string(),
+            ))
             .await
             .unwrap();
 
@@ -363,7 +365,10 @@ mod tests {
         let transaction = Transaction::new(node0_wallet.address, 0, node1_wallet);
         let transaction_paths = TransactionPaths::new(transaction);
         node1_sender
-            .send(Message::new_transaction_paths_msg(transaction_paths))
+            .send(Message::new_transaction_paths_msg(
+                transaction_paths,
+                "".to_string(),
+            ))
             .await
             .unwrap();
 

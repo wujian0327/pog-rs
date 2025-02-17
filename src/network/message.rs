@@ -10,20 +10,23 @@ use std::fmt::{Display, Formatter};
 pub struct Message {
     pub msg_type: MessageType,
     pub data: Vec<u8>,
+    pub from: String,
 }
 
 impl Message {
-    pub fn new_block_msg(block: Block) -> Message {
+    pub fn new_block_msg(block: Block, from: String) -> Message {
         Message {
             msg_type: MessageType::SEND_BLOCK,
             data: block.to_json(),
+            from,
         }
     }
 
-    pub fn new_transaction_paths_msg(transaction_paths: TransactionPaths) -> Message {
+    pub fn new_transaction_paths_msg(transaction_paths: TransactionPaths, from: String) -> Message {
         Message {
             msg_type: MessageType::SEND_TRANSACTION_PATHS,
             data: transaction_paths.to_json(),
+            from,
         }
     }
 
@@ -31,6 +34,7 @@ impl Message {
         Message {
             msg_type: MessageType::GENERATE_BLOCK,
             data: vec![],
+            from: "".to_string(),
         }
     }
 
@@ -38,6 +42,7 @@ impl Message {
         Message {
             msg_type: MessageType::GENERATE_TRANSACTION_PATHS,
             data: to.into_bytes(),
+            from: "".to_string(),
         }
     }
 
@@ -45,6 +50,7 @@ impl Message {
         Message {
             msg_type: MessageType::SEND_RANDAO_SEED,
             data: vec![],
+            from: "".to_string(),
         }
     }
 
@@ -52,6 +58,7 @@ impl Message {
         Message {
             msg_type: MessageType::RECEIVE_RANDAO_SEED,
             data: randao_seed.to_json(),
+            from: "".to_string(),
         }
     }
 
@@ -59,6 +66,7 @@ impl Message {
         Message {
             msg_type: MessageType::BECOME_VALIDATOR,
             data: vec![],
+            from: "".to_string(),
         }
     }
 
@@ -66,6 +74,7 @@ impl Message {
         Message {
             msg_type: MessageType::RECEIVE_BECOME_VALIDATOR,
             data: validator.to_json(),
+            from: "".to_string(),
         }
     }
 
@@ -73,6 +82,7 @@ impl Message {
         Message {
             msg_type: MessageType::UPDATE_SLOT,
             data: slot.to_json(),
+            from: "".to_string(),
         }
     }
 
@@ -80,6 +90,7 @@ impl Message {
         Message {
             msg_type: MessageType::PRINT_BLOCKCHAIN,
             data: vec![],
+            from: "".to_string(),
         }
     }
 }
