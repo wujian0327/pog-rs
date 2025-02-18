@@ -137,13 +137,13 @@ pub fn random_graph_with_ba_network(nodes_address: Vec<String>) -> Graph<String,
             graph.add_edge(*from, *to, ());
         }
     }
-    let mut graph_clone = graph.clone();
-    graph_clone.node_indices().for_each(|i| {
-        let node = graph_clone.node_weight_mut(i).unwrap();
-        *node = short_hash(node.clone())[2..].to_string();
-    });
+    // let mut graph_clone = graph.clone();
+    // graph_clone.node_indices().for_each(|i| {
+    //     let node = graph_clone.node_weight_mut(i).unwrap();
+    //     *node = short_hash(node.clone())[2..].to_string();
+    // });
 
-    print_graph(&graph_clone);
+    print_graph(&graph.clone());
     graph
 }
 

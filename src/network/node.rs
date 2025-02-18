@@ -226,7 +226,7 @@ impl Node {
                         let mut skip = false;
                         for cache in transactions_cache.iter() {
                             if cache.transaction.hash == transaction_paths.transaction.hash
-                            // && cache.paths.len() <= transaction_paths.paths.len()
+                                && cache.paths.len() <= transaction_paths.paths.len()
                             {
                                 skip = true;
                                 break;
@@ -411,12 +411,8 @@ impl Node {
                     self.epoch = slot.current_epoch;
                 }
                 MessageType::PrintBlockchain => {
-                    info!("Node[{}] received msg[{}]", self.index, msg.msg_type);
-                    self.blockchain
-                        .read()
-                        .await
-                        .write_to_file_last_block_simple()
-                        .await;
+                    debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);
+                    self.blockchain.read().await.write_to_file_all_json().await;
                 }
                 _ => {}
             }

@@ -35,7 +35,7 @@ impl Transaction {
         t
     }
 
-    pub(crate) fn verify(&self) -> bool {
+    pub fn verify(&self) -> bool {
         let from = self.from.clone();
         let to = self.to.clone();
         let t = Transaction {

@@ -204,12 +204,12 @@ impl AggregatedSignedPaths {
             return false;
         }
         //miner和发起是一个节点
-        if transaction.from == miner && *self.paths.first().unwrap() == miner {
+        if transaction.from == miner && self.paths.first().unwrap().to_string() == miner {
             return true;
         }
 
         //miner必须是最后一个path
-        if *self.paths.last().unwrap() != miner {
+        if self.paths.last().unwrap().to_string() != miner {
             return false;
         }
         //聚合签名验证

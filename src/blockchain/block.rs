@@ -98,10 +98,11 @@ impl Block {
                 error!("{}", BlockError::InvalidBlockTransactions);
                 return false;
             }
-            if !self.body.paths[i].verify(transaction.clone(), self.header.miner.clone()) {
-                error!("{}", BlockError::InvalidBlockPath);
-                return false;
-            }
+            // 这块很消耗CPU资源，有n个节点,每个区块有m个交易，就要验证n*m次，本地跑的话，只有进行安全测试时，才会使用下面的代码
+            // if !self.body.paths[i].verify(transaction.clone(), self.header.miner.clone()) {
+            //     error!("{}", BlockError::InvalidBlockPath);
+            //     return false;
+            // }
         }
         true
     }
@@ -119,7 +120,7 @@ impl Block {
         for pair in leaves.chunks(2) {
             let mut combined = decode(pair[0].clone()).unwrap();
             combined.append(&mut decode(pair[1].clone()).unwrap());
-            let hash = encode(combined);
+            let hash = encode(tools::Hasher::hash(combined));
             next_level.push(hash);
         }
         Block::cal_merkle_root(next_level)

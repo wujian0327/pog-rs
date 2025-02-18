@@ -3,9 +3,13 @@ import json
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import colors
+
+import data_process
+import matplotlib.colors as mcolors
 
 
-def print_graph(json_file, output_path):
+def print_graph(bc: data_process.Blockchain, json_file="../graph.json", output_path='../figures/graph.png'):
     """
     将graph.json文件转换为Matplotlib图表
     """
@@ -16,6 +20,7 @@ def print_graph(json_file, output_path):
     G = nx.Graph()
     for edge in data:
         G.add_edge(edge[0], edge[1])
+    print("number of nodes:", G.number_of_nodes())
 
     # 高级布局配置
     pos = nx.spring_layout(
@@ -27,9 +32,14 @@ def print_graph(json_file, output_path):
         # threshold=1e-4  # 更严格的收敛阈值
     )
 
-    # 节点可视化参数
-    node_sizes = [500 + 30 * degree for _, degree in G.degree()]  # 按度数缩放节点大小
-    node_colors = np.linspace(0.2, 1.0, num=len(node_sizes))  # 颜色渐变
+    # 节点出块越多，节点越大
+    node_sizes = [1000 * (1 + bc.get_miner_percentage(n) * 20) for n in G.nodes()]
+
+    # 节点网络贡献越多，颜色越鲜艳
+    node_colors = [bc.get_node_path_percentage(n) for n in G.nodes()]
+    arr = np.array(node_colors)
+    node_colors = np.log(arr)
+
     cmap = plt.cm.viridis  # 使用现代配色方案
 
     # 边样式配置
@@ -44,6 +54,8 @@ def print_graph(json_file, output_path):
         G, pos, alpha=0.5, width=0.6, edge_color="#7F7F7F", ax=ax  # 基础透明度
     )
 
+    norm = colors.Normalize(vmin=0.6, vmax=0.3)
+
     # 绘制节点
     nodes = nx.draw_networkx_nodes(
         G,
@@ -57,8 +69,9 @@ def print_graph(json_file, output_path):
     )
 
     # 标签策略
-    important_nodes = [n for n, d in G.degree() if d > 5]  # 只标记高度数节点
-    labels = {n: str(n) for n in important_nodes}
+    # important_nodes = [n for n in G.nodes() if bc.get_node_path_percentage(n) > 0.01]
+    # important_nodes = [n for n, d in G.degree() if d > 5]  # 只标记高度数节点
+    labels = {n: str(n)[:5] for n in G.nodes()}
     nx.draw_networkx_labels(
         G,
         pos,
@@ -70,8 +83,10 @@ def print_graph(json_file, output_path):
     )
 
     # 添加装饰元素
-    plt.colorbar(nodes, label="Node Centrality", shrink=0.8)  # 颜色条说明
-    ax.set_title("Complex Network Visualization (100 Nodes)", fontsize=14, pad=20)
+    cbar = plt.colorbar(nodes, label="Network Contribution Percentage", shrink=0.8)  # 颜色条说明
+    # cbar.set_ticks([0, 25, 50, 75, 100])
+    cbar.set_ticklabels([f"{bc.get_node_path_percentage(n) * 100:.2f}%" for n in G.nodes()])
+    ax.set_title("Validation of Network Contribution Quantification (100 Nodes)", fontsize=24, pad=20)
 
     # 优化画布细节
     ax.margins(0.02)
@@ -84,8 +99,6 @@ def print_graph(json_file, output_path):
 
 
 if __name__ == '__main__':
+    bc = data_process.get_blockchain_from_json()
     # 示例使用
-    print_graph(
-        '../graph.json',
-        output_path='../figures/graph.png',
-    )
+    print_graph(bc)

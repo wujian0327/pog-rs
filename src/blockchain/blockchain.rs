@@ -2,6 +2,7 @@ use crate::blockchain::block::Block;
 use log::error;
 use std::collections::HashSet;
 use std::fmt;
+use std::fs::File;
 use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Clone)]
@@ -85,7 +86,7 @@ impl Blockchain {
 
     pub async fn write_to_file_all_json(&self) {
         let path = "blockchain.json";
-        let json = serde_json::to_vec(&self.blocks).unwrap();
+        let json = serde_json::to_string_pretty(&self.blocks).unwrap();
         match tokio::fs::write(path, json).await {
             Ok(_) => {}
             Err(e) => {

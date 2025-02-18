@@ -119,11 +119,11 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
     });
     tasks.push(t);
 
-    // let mut printer = Printer::new(nodes_sender.clone(), Duration::from_secs(5));
-    // let t = tokio::spawn(async move {
-    //     printer.run().await;
-    // });
-    // tasks.push(t);
+    let mut printer = Printer::new(nodes_sender.clone(), Duration::from_secs(10));
+    let t = tokio::spawn(async move {
+        printer.run().await;
+    });
+    tasks.push(t);
 
     let _ = join_all(tasks).await;
 }
@@ -185,33 +185,33 @@ impl TransactionGenerator {
     }
 }
 
-// struct Printer {
-//     nodes_sender: HashMap<String, Sender<Message>>,
-//     interval: Duration,
-// }
-//
-// impl Printer {
-//     fn new(nodes_sender: HashMap<String, Sender<Message>>, interval: Duration) -> Printer {
-//         Printer {
-//             nodes_sender,
-//             interval,
-//         }
-//     }
-//
-//     async fn run(&mut self) {
-//         let mut interval = time::interval(self.interval);
-//         loop {
-//             interval.tick().await;
-//
-//             let node = self.nodes_sender.iter().choose(&mut rand::thread_rng());
-//             node.unwrap()
-//                 .1
-//                 .send(Message::new_print_blockchain_msg())
-//                 .await
-//                 .unwrap();
-//         }
-//     }
-// }
+struct Printer {
+    nodes_sender: HashMap<String, Sender<Message>>,
+    interval: Duration,
+}
+
+impl Printer {
+    fn new(nodes_sender: HashMap<String, Sender<Message>>, interval: Duration) -> Printer {
+        Printer {
+            nodes_sender,
+            interval,
+        }
+    }
+
+    async fn run(&mut self) {
+        let mut interval = time::interval(self.interval);
+        loop {
+            interval.tick().await;
+
+            let node = self.nodes_sender.iter().choose(&mut rand::thread_rng());
+            node.unwrap()
+                .1
+                .send(Message::new_print_blockchain_msg())
+                .await
+                .unwrap();
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

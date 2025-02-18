@@ -4,7 +4,7 @@
 
 For windows：
 
-[安装 Rust - Rust 程序设计语言](https://www.rust-lang.org/zh-CN/tools/install)
+https://www.rust-lang.org/tools/install
 
 For linux:
 
