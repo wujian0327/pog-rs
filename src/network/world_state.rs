@@ -1,4 +1,5 @@
 use crate::blockchain::block::Block;
+use crate::blockchain::{BlockChainError, Blockchain};
 use crate::consensus::pog::Pog;
 use crate::consensus::pos::Pos;
 use crate::consensus::ConsensusType::POG;
@@ -29,6 +30,7 @@ pub struct WorldState {
     // pub receiver: Receiver<Message>,
     // pub nodes_balance: HashMap<String, u64>,
     pub nodes_sender: HashMap<String, Sender<Message>>,
+    pub blockchain: Arc<RwLock<Blockchain>>,
 }
 
 static SLOT_DURATION: Duration = Duration::from_secs(5);
@@ -47,6 +49,7 @@ impl WorldState {
     pub fn new(
         genesis_block: Block,
         consensus_type: ConsensusType,
+        blockchain: Blockchain,
     ) -> (Self, Sender<Message>, Receiver<Message>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
@@ -63,6 +66,7 @@ impl WorldState {
                 validators: Arc::new(RwLock::new(vec![])),
                 consensus_type,
                 nodes_sender,
+                blockchain: Arc::new(RwLock::new(blockchain)),
             },
             sender,
             receiver,
@@ -112,11 +116,10 @@ impl WorldState {
         }
 
         //获得出块节点
+        let bc = self.blockchain.read().await.clone();
         let miner_validator = match self.consensus_type {
-            ConsensusType::POS => {
-                Pos::select(validators.clone(), next_seed.clone(), Vec::new()).unwrap()
-            }
-            POG => Pog::select(validators.clone(), next_seed.clone(), Vec::new()).unwrap(),
+            ConsensusType::POS => Pos::select(validators.clone(), next_seed.clone(), bc).unwrap(),
+            POG => Pog::select(validators.clone(), next_seed.clone(), bc).unwrap(),
         };
 
         //通知miner出块
@@ -178,6 +181,26 @@ impl WorldState {
                                 validators.retain(|v| v.address != validator.address);
                                 validators.push(validator.clone());
                             }
+                        }
+                        MessageType::SendBlock => {
+                            let block = match Block::from_json(msg.data) {
+                                Ok(b) => b,
+                                Err(e) => {
+                                    error!("Error: {}", e);
+                                    continue;
+                                }
+                            };
+
+                            let shared_self = shared_self.write().await;
+                            if let Err(e) = shared_self.blockchain.write().await.add_block(block) {
+                                match e {
+                                    _ => {
+                                        error!("World State Error: {}", e);
+                                    }
+                                }
+                                continue;
+                            }
+                            debug!("World State add block successfully");
                         }
                         _ => {}
                     }
@@ -256,8 +279,11 @@ mod tests {
             .try_init();
 
         let blockchain = Blockchain::new(Block::gen_genesis_block());
-        let (world, _world_sender, world_receiver) =
-            WorldState::new(blockchain.get_last_block().clone(), ConsensusType::POS);
+        let (world, _world_sender, world_receiver) = WorldState::new(
+            blockchain.get_last_block().clone(),
+            ConsensusType::POS,
+            Blockchain::new(Block::gen_genesis_block()),
+        );
         tokio::spawn(async move {
             world.run(world_receiver).await;
         });
@@ -272,8 +298,11 @@ mod tests {
             .try_init();
 
         let blockchain = Blockchain::new(Block::gen_genesis_block());
-        let (mut world, world_sender, world_receiver) =
-            WorldState::new(blockchain.get_last_block().clone(), ConsensusType::POS);
+        let (mut world, world_sender, world_receiver) = WorldState::new(
+            blockchain.get_last_block().clone(),
+            ConsensusType::POS,
+            Blockchain::new(Block::gen_genesis_block()),
+        );
 
         let validators = world.validators.clone();
         let current_slot = world.current_slot.clone();

@@ -320,6 +320,15 @@ impl Node {
                                 .unwrap();
                         });
                     }
+                    //告诉下worldState
+                    let world_state_sender = self.world_state_sender.clone();
+                    let self_address = self.get_address();
+                    tokio::spawn(async move {
+                        world_state_sender
+                            .send(Message::new_block_msg(block, self_address))
+                            .await
+                            .unwrap();
+                    });
                 }
                 MessageType::GenerateTransactionPaths => {
                     let to = match String::from_utf8(msg.data) {
@@ -393,7 +402,7 @@ impl Node {
                     self.world_state_sender
                         .send(Message::new_receive_become_validator_msg(Validator::new(
                             self.wallet.address.clone(),
-                            32,
+                            32f64,
                         )))
                         .await
                         .unwrap();

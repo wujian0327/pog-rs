@@ -31,7 +31,7 @@ impl Display for ConsensusType {
     }
 }
 
-pub(crate) fn combine_seed(validators: Vec<Validator>, vdf_seeds: Vec<RandaoSeed>) -> [u8; 32] {
+pub fn combine_seed(validators: Vec<Validator>, vdf_seeds: Vec<RandaoSeed>) -> [u8; 32] {
     let mut result = [0u8; 32];
     for v in vdf_seeds.clone() {
         if !validators
@@ -56,15 +56,15 @@ pub(crate) fn combine_seed(validators: Vec<Validator>, vdf_seeds: Vec<RandaoSeed
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Validator {
     pub address: String,
-    pub stake: u64,
+    pub stake: f64,
 }
 
 impl Validator {
-    pub fn new(address: String, stake: u64) -> Self {
+    pub fn new(address: String, stake: f64) -> Self {
         Validator { address, stake }
     }
 
-    pub fn from_node(node: Node, stake: u64) -> Self {
+    pub fn from_node(node: Node, stake: f64) -> Self {
         Validator::new(node.wallet.address.clone(), stake)
     }
 

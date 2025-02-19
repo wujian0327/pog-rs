@@ -17,18 +17,20 @@ use tokio::time;
 mod graph;
 mod message;
 pub mod node;
-pub mod validator;
 mod world_state;
 
 pub async fn start_network(node_num: u32, trans_num_per_second: u32, consensus: ConsensusType) {
     info!("Consensus Type is {}", consensus);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
     //1. new blockchain
     let genesis_block = Block::gen_genesis_block();
     let bc = Blockchain::new(genesis_block.clone());
     info!("Generate genesis block");
 
     //2. world state
-    let (mut world, world_sender, world_receiver) = WorldState::new(genesis_block, consensus);
+    let (mut world, world_sender, world_receiver) =
+        WorldState::new(genesis_block, consensus, bc.clone());
     info!("Generate world state");
 
     //3. nodes
@@ -180,7 +182,7 @@ impl TransactionGenerator {
                 }
             }
             info!(
-                "[{}]Transaction generated (λ={})",
+                "[{}]Transactions generated (λ={})",
                 num_messages, self.trans_num_per_interval
             );
         }

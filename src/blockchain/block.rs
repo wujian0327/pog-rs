@@ -5,6 +5,7 @@ use crate::wallet::Wallet;
 use hex::{decode, encode};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Block {
@@ -133,6 +134,37 @@ impl Block {
         let paths = AggregatedSignedPaths::from_transaction_paths(transaction_paths);
         let body = Body::new(vec![transaction], vec![paths]);
         Block::new(0, 0, 0, "".to_string(), body, miner).unwrap()
+    }
+
+    pub fn count_node_paths_map(&self) -> HashMap<String, usize> {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for x in self.body.paths.clone() {
+            for p in x.paths {
+                counts
+                    .entry(p)
+                    .and_modify(|counter| *counter += 1)
+                    .or_insert(1);
+            }
+        }
+        counts
+    }
+
+    pub fn count_node_paths(&self, address: String) -> usize {
+        self.count_node_paths_map()
+            .get(&address)
+            .or_else(|| Some(&(0usize)))
+            .unwrap()
+            .clone()
+    }
+
+    pub fn count_all_paths(&self) -> usize {
+        let mut counts = 0;
+        for x in self.body.paths.clone() {
+            for y in x.paths {
+                counts += 1;
+            }
+        }
+        counts
     }
 
     pub fn from_json(json: Vec<u8>) -> Result<Block, BlockError> {
