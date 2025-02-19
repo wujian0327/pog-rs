@@ -1,5 +1,6 @@
 use crate::blockchain::block::Block;
-use crate::blockchain::blockchain::Blockchain;
+use crate::blockchain::Blockchain;
+use crate::consensus::ConsensusType;
 use crate::network::message::Message;
 use crate::network::node::{Neighbor, Node};
 use crate::network::world_state::WorldState;
@@ -19,14 +20,15 @@ pub mod node;
 pub mod validator;
 mod world_state;
 
-pub async fn start_network(node_num: u32, trans_num_per_second: u32) {
+pub async fn start_network(node_num: u32, trans_num_per_second: u32, consensus: ConsensusType) {
+    info!("Consensus Type is {}", consensus);
     //1. new blockchain
     let genesis_block = Block::gen_genesis_block();
     let bc = Blockchain::new(genesis_block.clone());
     info!("Generate genesis block");
 
     //2. world state
-    let (mut world, world_sender, world_receiver) = WorldState::new(genesis_block);
+    let (mut world, world_sender, world_receiver) = WorldState::new(genesis_block, consensus);
     info!("Generate world state");
 
     //3. nodes

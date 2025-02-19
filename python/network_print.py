@@ -6,7 +6,6 @@ import numpy as np
 from matplotlib import colors
 
 import data_process
-import matplotlib.colors as mcolors
 
 
 def print_graph(bc: data_process.Blockchain, json_file="../graph.json", output_path='../figures/graph.png'):

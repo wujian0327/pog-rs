@@ -1,5 +1,6 @@
 use clap::Parser;
 use log::LevelFilter;
+use pog::consensus::ConsensusType;
 use pog::network;
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
@@ -16,6 +17,10 @@ struct Args {
     /// 每秒交易个数（泊松分布）
     #[clap(short, long, default_value = "10")]
     trans_num: u32,
+
+    /// 共识算法类型
+    #[arg(short, long, default_value_t = ConsensusType::POS)]
+    consensus: ConsensusType,
 }
 
 #[tokio::main]
@@ -26,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //log setting
     init_logger()?;
 
-    network::start_network(args.node_num, args.trans_num).await;
+    network::start_network(args.node_num, args.trans_num, args.consensus).await;
     Ok(())
 }
 

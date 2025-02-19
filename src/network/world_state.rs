@@ -1,8 +1,11 @@
 use crate::blockchain::block::Block;
+use crate::consensus::pog::Pog;
+use crate::consensus::pos::Pos;
+use crate::consensus::ConsensusType::POG;
+use crate::consensus::{ConsensusType, RandaoSeed, Validator};
 use crate::network::message::{Message, MessageType};
-use crate::network::validator::{Randao, RandaoSeed, Validator};
-use crate::tools;
 use crate::tools::get_timestamp;
+use crate::{consensus, tools};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +20,7 @@ use tokio::{task, time};
 /// 全局状态，用于管理时隙、vdf投票，余额等等
 /// 也可以用于与所有的节点进行通信
 pub struct WorldState {
+    pub consensus_type: ConsensusType,
     pub current_slot: Arc<RwLock<SlotManager>>,
     // pub slots: Vec<SlotManager>,
     pub validators: Arc<RwLock<Vec<Validator>>>,
@@ -40,7 +44,10 @@ pub struct SlotManager {
 }
 
 impl WorldState {
-    pub fn new(genesis_block: Block) -> (Self, Sender<Message>, Receiver<Message>) {
+    pub fn new(
+        genesis_block: Block,
+        consensus_type: ConsensusType,
+    ) -> (Self, Sender<Message>, Receiver<Message>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
         (
@@ -54,7 +61,7 @@ impl WorldState {
                     start_timestamp: genesis_block.header.timestamp,
                 })),
                 validators: Arc::new(RwLock::new(vec![])),
-
+                consensus_type,
                 nodes_sender,
             },
             sender,
@@ -66,8 +73,8 @@ impl WorldState {
         let current_slot = self.current_slot.read().await.clone();
         //计算randao seed
         let validators = self.validators.read().await.clone();
-        let randao = Randao::new(current_slot.randao_seeds, validators.clone());
-        let next_seed = randao.combine_seed();
+
+        let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
         self.current_slot = Arc::new(RwLock::new(SlotManager {
             randao_seeds: vec![],
             slot_duration: SLOT_DURATION,
@@ -105,13 +112,13 @@ impl WorldState {
         }
 
         //获得出块节点
-        let miner_validator = match randao.weighted_random_selection() {
-            Ok(v) => v,
-            Err(e) => {
-                error!("World State error: failed to find miner: {}", e);
-                return;
+        let miner_validator = match self.consensus_type {
+            ConsensusType::POS => {
+                Pos::select(validators.clone(), next_seed.clone(), Vec::new()).unwrap()
             }
+            POG => Pog::select(validators.clone(), next_seed.clone(), Vec::new()).unwrap(),
         };
+
         //通知miner出块
         match self.nodes_sender.get(&miner_validator.address) {
             Some(sender) => {
@@ -235,9 +242,9 @@ impl From<serde_json::error::Error> for WorldStateError {
 mod tests {
     use super::*;
     use crate::blockchain::block::Block;
-    use crate::blockchain::blockchain::Blockchain;
     use crate::blockchain::path::TransactionPaths;
     use crate::blockchain::transaction::Transaction;
+    use crate::blockchain::Blockchain;
     use crate::network::node::{Neighbor, Node};
     use log::info;
 
@@ -250,7 +257,7 @@ mod tests {
 
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let (world, _world_sender, world_receiver) =
-            WorldState::new(blockchain.get_last_block().clone());
+            WorldState::new(blockchain.get_last_block().clone(), ConsensusType::POS);
         tokio::spawn(async move {
             world.run(world_receiver).await;
         });
@@ -266,7 +273,7 @@ mod tests {
 
         let blockchain = Blockchain::new(Block::gen_genesis_block());
         let (mut world, world_sender, world_receiver) =
-            WorldState::new(blockchain.get_last_block().clone());
+            WorldState::new(blockchain.get_last_block().clone(), ConsensusType::POS);
 
         let validators = world.validators.clone();
         let current_slot = world.current_slot.clone();

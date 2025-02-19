@@ -1,9 +1,9 @@
 use crate::blockchain::block::{Block, BlockError, Body};
-use crate::blockchain::blockchain::{BlockChainError, Blockchain};
 use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
+use crate::blockchain::{BlockChainError, Blockchain};
+use crate::consensus::{RandaoSeed, Validator};
 use crate::network::message::{Message, MessageType};
-use crate::network::validator::{RandaoSeed, Validator};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
 use log::{debug, error, info};
@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 
 ///通过Tokio的mpsc通道与其他节点交互
 ///负责出块、发送交易、发送seed
-pub(crate) struct Node {
+pub struct Node {
     pub index: u32,
     pub epoch: u64,
     pub slot: u64,
