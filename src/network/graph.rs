@@ -1,15 +1,32 @@
 use crate::tools::short_hash;
-use log::{error, info};
-use petgraph::dot::{Config, Dot};
+use clap::ValueEnum;
 use petgraph::graph::NodeIndex;
 use petgraph::prelude::EdgeRef;
 use petgraph::Graph;
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::io::Write;
-use std::process::Command;
-use tokio::io::AsyncWriteExt;
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum TopologyType {
+    ER,
+    BA,
+}
+
+impl Display for TopologyType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match *self {
+            TopologyType::ER => {
+                write!(f, "ER")
+            }
+            TopologyType::BA => {
+                write!(f, "BA")
+            }
+        }
+    }
+}
 
 //Barabási–Albert 模型，用于生成无标度网络
 struct BANetwork {
@@ -90,14 +107,14 @@ impl BANetwork {
     }
 }
 
-pub fn random_graph(nodes_address: Vec<String>, probability: f64) -> Graph<String, ()> {
+//Erdős–Rényi(ER)拓扑
+pub fn random_er_graph(nodes_address: Vec<String>, probability: f64) -> Graph<String, ()> {
     let mut graph = Graph::<String, ()>::new();
     let mut rng = rand::thread_rng();
 
     let nodes: Vec<NodeIndex> = nodes_address
         .iter()
         .map(|i| graph.add_node(i.clone()))
-        // .map(|i| graph.add_node(short_hash(i.to_string())))
         .collect();
 
     // 以 p 的概率生成边
@@ -109,13 +126,7 @@ pub fn random_graph(nodes_address: Vec<String>, probability: f64) -> Graph<Strin
         }
     }
 
-    let mut graph_clone = graph.clone();
-    graph_clone.node_indices().for_each(|i| {
-        let node = graph_clone.node_weight_mut(i).unwrap();
-        *node = short_hash(node.clone());
-    });
-
-    print_graph(&graph_clone);
+    print_graph(&graph.clone());
     graph
 }
 

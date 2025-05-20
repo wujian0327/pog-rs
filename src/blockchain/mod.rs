@@ -4,14 +4,15 @@ pub mod transaction;
 
 use crate::blockchain::block::Block;
 use log::error;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 use tokio::io::AsyncWriteExt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Blockchain {
-    blocks: Vec<Block>,
-    transactions_hash_set: HashSet<String>,
+    pub blocks: Vec<Block>,
+    pub transactions_hash_set: HashSet<String>,
 }
 
 impl Blockchain {
@@ -78,6 +79,33 @@ impl Blockchain {
     }
     pub fn get_lash_index(&self) -> u64 {
         self.get_last_block().header.index
+    }
+
+    pub fn get_last_epoch_slot(&self) -> (u64, u64) {
+        let header = self.get_last_block().header;
+        (header.epoch, header.slot)
+    }
+
+    pub fn get_last_slot_block(&self) -> Vec<Block> {
+        let (epoch, slot) = self.get_last_epoch_slot();
+        let blocks: Vec<Block> = self
+            .blocks
+            .iter()
+            .filter(|b| b.header.slot == slot && b.header.epoch == epoch)
+            .map(|b| b.clone())
+            .collect();
+        blocks
+    }
+
+    pub fn get_last_epoch_block(&self) -> Vec<Block> {
+        let (epoch, _slot) = self.get_last_epoch_slot();
+        let blocks: Vec<Block> = self
+            .blocks
+            .iter()
+            .filter(|b| b.header.epoch == epoch)
+            .map(|b| b.clone())
+            .collect();
+        blocks
     }
 
     pub fn simple_print_last_five_block(&self) {

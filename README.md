@@ -22,3 +22,6 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo run --release -- -n 100 -t 10 -c pos
 ```
 
+```
+cargo  test test_stake_real_c_total_both_increase --release -- --nocapture
+```

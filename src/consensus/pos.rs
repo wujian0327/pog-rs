@@ -1,9 +1,9 @@
-use crate::blockchain::path::AggregatedSignedPaths;
 use crate::blockchain::Blockchain;
 use crate::consensus::ValidatorError::NOValidatorError;
-use crate::consensus::{RandaoSeed, Validator, ValidatorError};
+use crate::consensus::{Validator, ValidatorError};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use std::collections::HashMap;
 
 pub struct Pos;
 

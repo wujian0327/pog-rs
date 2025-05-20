@@ -32,7 +32,7 @@ def print_graph(bc: data_process.Blockchain, json_file="../graph.json", output_p
     )
 
     # 节点出块越多，节点越大
-    node_sizes = [1000 * (1 + bc.get_miner_percentage(n) * 20) for n in G.nodes()]
+    node_sizes = [1000 * (1 + bc.get_miner_percentage(n) * 30) for n in G.nodes()]
 
     # 节点网络贡献越多，颜色越鲜艳
     node_colors = [bc.get_node_path_percentage(n) for n in G.nodes()]

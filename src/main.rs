@@ -2,6 +2,7 @@ use clap::Parser;
 use log::LevelFilter;
 use pog::consensus::ConsensusType;
 use pog::network;
+use pog::network::graph::TopologyType;
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
@@ -11,7 +12,7 @@ use std::fs::File;
 #[clap(version = "1.0", author = "wujian", about = "POG协议模拟")]
 struct Args {
     /// 节点个数
-    #[clap(short, long, default_value = "10")]
+    #[clap(short, long, default_value = "50")]
     node_num: u32,
 
     /// 每秒交易个数（泊松分布）
@@ -19,8 +20,12 @@ struct Args {
     trans_num: u32,
 
     /// 共识算法类型
-    #[arg(short, long, default_value_t = ConsensusType::POS)]
+    #[arg(short, long, default_value_t = ConsensusType::POG)]
     consensus: ConsensusType,
+
+    ///拓扑结构
+    #[arg(long, default_value_t = TopologyType::BA)]
+    topology: TopologyType,
 }
 
 #[tokio::main]
@@ -31,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //log setting
     init_logger()?;
 
-    network::start_network(args.node_num, args.trans_num, args.consensus).await;
+    network::start_network(args.node_num, args.trans_num, args.consensus, args.topology).await;
     Ok(())
 }
 

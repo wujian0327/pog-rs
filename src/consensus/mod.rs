@@ -110,7 +110,7 @@ pub struct RandaoSeed {
 }
 
 impl RandaoSeed {
-    fn new(wallet: Wallet) -> Self {
+    pub fn new(wallet: Wallet) -> Self {
         let seed = RandaoSeed::generate_seed();
         let signature = wallet.sign(Vec::from(seed));
         RandaoSeed {
@@ -120,7 +120,7 @@ impl RandaoSeed {
         }
     }
 
-    pub(crate) fn generate_seed() -> [u8; 32] {
+    pub fn generate_seed() -> [u8; 32] {
         let mut rng = OsRng;
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);

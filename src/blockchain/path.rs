@@ -5,6 +5,7 @@ use blst::min_sig::{PublicKey, Signature};
 use hex::decode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use zstd::zstd_safe::WriteBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Path {
@@ -233,6 +234,37 @@ impl AggregatedSignedPaths {
         //miner并没有传播交易，所以去掉
         pks.remove(pks.len() - 1);
         Wallet::bls_aggregated_verify(messages, pks, self.signature.clone())
+    }
+
+    pub fn bytes(&self) -> u64 {
+        let mut bytes: u64 = 0;
+        self.paths.iter().for_each(|n| {
+            bytes = bytes + n.as_bytes().len() as u64;
+        });
+        bytes = bytes + self.signature.as_bytes().len() as u64;
+        bytes
+    }
+
+    pub fn to_json(&self) -> Vec<u8> {
+        serde_json::to_vec(&self).unwrap()
+    }
+
+    pub fn from_json(json: Vec<u8>) -> AggregatedSignedPaths {
+        let p: AggregatedSignedPaths = serde_json::from_slice(json.as_slice()).unwrap();
+        p
+    }
+
+    pub fn json_bytes(&self) -> u64 {
+        self.to_json().len() as u64
+    }
+
+    pub fn compress(&self) -> Vec<u8> {
+        zstd::stream::encode_all(self.to_json().as_slice(), 22).unwrap()
+    }
+
+    pub fn decompress(data: Vec<u8>) -> AggregatedSignedPaths {
+        let data = zstd::stream::decode_all(data.as_slice()).unwrap();
+        AggregatedSignedPaths::from_json(data)
     }
 }
 

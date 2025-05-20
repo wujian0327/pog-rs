@@ -1,6 +1,7 @@
 use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::ConsensusType;
+use crate::network::graph::TopologyType;
 use crate::network::message::Message;
 use crate::network::node::{Neighbor, Node};
 use crate::network::world_state::WorldState;
@@ -14,12 +15,17 @@ use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::time;
 
-mod graph;
-mod message;
+pub mod graph;
+pub mod message;
 pub mod node;
-mod world_state;
+pub mod world_state;
 
-pub async fn start_network(node_num: u32, trans_num_per_second: u32, consensus: ConsensusType) {
+pub async fn start_network(
+    node_num: u32,
+    trans_num_per_second: u32,
+    consensus: ConsensusType,
+    topology: TopologyType,
+) {
     info!("Consensus Type is {}", consensus);
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -50,11 +56,17 @@ pub async fn start_network(node_num: u32, trans_num_per_second: u32, consensus: 
         .collect();
     let nodes_address: Vec<String> = node_map.keys().cloned().collect();
     info!("Generate {} nodes", node_num);
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     //4. gen the network graph
+    let graph = match topology {
+        TopologyType::ER => graph::random_er_graph(nodes_address.clone(), 0.1),
+        TopologyType::BA => graph::random_graph_with_ba_network(nodes_address.clone()),
+    };
     // let graph = graph::random_graph(nodes_address.clone(), 0.3);
-    let graph = graph::random_graph_with_ba_network(nodes_address.clone());
-    info!("Generate network graph");
+    // let graph = graph::random_graph_with_ba_network(nodes_address.clone());
+    info!("Generate network graph[{}]", topology);
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     //deal the node neighborhoods
     for edge in graph.edge_indices() {

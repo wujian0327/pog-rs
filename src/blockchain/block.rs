@@ -61,6 +61,18 @@ impl Header {
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
         encode(hash)
     }
+
+    pub fn bytes(&self) -> u64 {
+        let index = 8;
+        let epoch = 8;
+        let slot = 8;
+        let timestamp = 8;
+        let hash = self.hash.as_bytes().len() as u64;
+        let parent_hash = self.parent_hash.as_bytes().len() as u64;
+        let merkle_root = self.merkle_root.as_bytes().len() as u64;
+        let miner = self.miner.as_bytes().len() as u64;
+        index + epoch + slot + timestamp + hash + parent_hash + merkle_root + miner
+    }
 }
 
 impl Block {
@@ -108,7 +120,7 @@ impl Block {
         true
     }
 
-    fn cal_merkle_root(mut leaves: Vec<String>) -> String {
+    pub fn cal_merkle_root(mut leaves: Vec<String>) -> String {
         if leaves.len() == 1 {
             return leaves[0].clone();
         }
@@ -167,6 +179,11 @@ impl Block {
         counts
     }
 
+    pub fn get_all_paths(&self) -> Vec<Vec<String>> {
+        let paths: Vec<Vec<String>> = self.body.paths.iter().map(|p| p.paths.clone()).collect();
+        paths
+    }
+
     pub fn from_json(json: Vec<u8>) -> Result<Block, BlockError> {
         let block: Block = serde_json::from_slice(json.as_slice())?;
         Ok(block)
@@ -219,14 +236,23 @@ impl Block {
     pub fn simple_print_no_transaction_detail(&self) {
         info!("{}", self.simple_print_no_transaction_string());
     }
+
+    pub fn bytes(&self) -> u64 {
+        self.header.bytes() + self.body.bytes()
+    }
 }
 
 impl Body {
-    pub(crate) fn new(transactions: Vec<Transaction>, paths: Vec<AggregatedSignedPaths>) -> Body {
+    pub fn new(transactions: Vec<Transaction>, paths: Vec<AggregatedSignedPaths>) -> Body {
         Body {
             transactions,
             paths,
         }
+    }
+    pub fn bytes(&self) -> u64 {
+        let txs: u64 = self.transactions.iter().map(|x| x.bytes()).sum();
+        let paths: u64 = self.paths.iter().map(|x| x.bytes()).sum();
+        txs + paths
     }
 }
 

@@ -151,7 +151,7 @@ impl Wallet {
         Ok(recovered_public_key)
     }
 
-    fn verify(&self, msg: Vec<u8>, signature: String) -> bool {
+    pub fn verify(&self, msg: Vec<u8>, signature: String) -> bool {
         //使用签名和消息恢复公钥，再判断公钥是否一致
         match Wallet::recover_pubkey(msg, signature) {
             Ok(recovered_public_key) => {

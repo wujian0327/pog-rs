@@ -12,6 +12,7 @@ pub struct Transaction {
     pub hash: String,
     pub signature: String,
     pub timestamp: u64,
+    pub data: Vec<u8>,
 }
 
 impl Transaction {
@@ -25,6 +26,7 @@ impl Transaction {
             hash: "".to_string(),
             signature: "".to_string(),
             timestamp: get_timestamp(),
+            data: Vec::new(),
         };
         let t_json = serde_json::to_string(&t).unwrap();
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
@@ -45,6 +47,7 @@ impl Transaction {
             hash: "".to_string(),
             signature: "".to_string(),
             timestamp: self.timestamp,
+            data: Vec::new(),
         };
         let t_json = serde_json::to_string(&t).unwrap();
         let hash = tools::Hasher::hash(t_json.as_bytes().to_vec());
@@ -52,6 +55,16 @@ impl Transaction {
             return false;
         }
         Wallet::verify_by_address(Vec::from(hash), self.signature.clone(), from)
+    }
+
+    pub fn bytes(&self) -> u64 {
+        let hash = self.hash.as_bytes().len() as u64;
+        let from = self.from.as_bytes().len() as u64;
+        let to = self.to.as_bytes().len() as u64;
+        let signature = self.signature.as_bytes().len() as u64;
+        let amount = 8;
+        let timestamp = 8;
+        hash + amount + timestamp + from + to + signature + self.data.len() as u64
     }
 }
 

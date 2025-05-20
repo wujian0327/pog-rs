@@ -1,8 +1,7 @@
 use crate::blockchain::block::Block;
-use crate::blockchain::{BlockChainError, Blockchain};
+use crate::blockchain::Blockchain;
 use crate::consensus::pog::Pog;
 use crate::consensus::pos::Pos;
-use crate::consensus::ConsensusType::POG;
 use crate::consensus::{ConsensusType, RandaoSeed, Validator};
 use crate::network::message::{Message, MessageType};
 use crate::tools::get_timestamp;
@@ -31,6 +30,7 @@ pub struct WorldState {
     // pub nodes_balance: HashMap<String, u64>,
     pub nodes_sender: HashMap<String, Sender<Message>>,
     pub blockchain: Arc<RwLock<Blockchain>>,
+    pub ntd: usize,
 }
 
 static SLOT_DURATION: Duration = Duration::from_secs(5);
@@ -67,6 +67,7 @@ impl WorldState {
                 consensus_type,
                 nodes_sender,
                 blockchain: Arc::new(RwLock::new(blockchain)),
+                ntd: 0,
             },
             sender,
             receiver,
@@ -77,20 +78,25 @@ impl WorldState {
         let current_slot = self.current_slot.read().await.clone();
         //计算randao seed
         let validators = self.validators.read().await.clone();
-
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
-        self.current_slot = Arc::new(RwLock::new(SlotManager {
-            randao_seeds: vec![],
-            slot_duration: SLOT_DURATION,
-            current_epoch: current_slot.current_epoch,
-            current_slot: current_slot.current_slot + 1,
-            next_seed,
-            start_timestamp: get_timestamp(),
-        }));
+
+        if current_slot.current_slot >= 10 {
+            //更新epoch
+            self.next_epoch().await;
+        } else {
+            self.current_slot = Arc::new(RwLock::new(SlotManager {
+                randao_seeds: vec![],
+                slot_duration: SLOT_DURATION,
+                current_epoch: current_slot.current_epoch,
+                current_slot: current_slot.current_slot + 1,
+                next_seed,
+                start_timestamp: get_timestamp(),
+            }));
+        }
         let current_slot = self.get_current_slot().await;
         info!(
-            "World State change slot to: epoch[{}] slot[{}] seed{:?}",
-            current_slot.current_epoch, current_slot.current_slot, next_seed
+            "World State change slot to: epoch[{}] slot[{}] NTD[{}] seed{:?}",
+            current_slot.current_epoch, current_slot.current_slot, self.ntd, next_seed
         );
 
         let nodes_sender: Vec<Sender<Message>> = self.nodes_sender.values().cloned().collect();
@@ -119,10 +125,13 @@ impl WorldState {
         let bc = self.blockchain.read().await.clone();
         let miner_validator = match self.consensus_type {
             ConsensusType::POS => Pos::select(validators.clone(), next_seed.clone(), bc).unwrap(),
-            POG => Pog::select(validators.clone(), next_seed.clone(), bc).unwrap(),
+            ConsensusType::POG => {
+                let k = self.ntd;
+                Pog::select(validators.clone(), next_seed.clone(), bc, self.ntd, k).unwrap()
+            }
         };
 
-        //通知miner出块
+        //这里简化成通知miner出块，实际上应该是每个节点自己算
         match self.nodes_sender.get(&miner_validator.address) {
             Some(sender) => {
                 debug!(
@@ -138,6 +147,35 @@ impl WorldState {
                 warn!("World State error: failed to find miner");
             }
         }
+    }
+
+    pub async fn next_epoch(&mut self) {
+        let current_slot = self.current_slot.read().await.clone();
+        let _current_epoch = current_slot.current_epoch;
+        //更新NTD
+        let blocks = self.blockchain.read().await.get_last_epoch_block();
+        let paths: Vec<Vec<String>> = blocks.iter().flat_map(|b| b.get_all_paths()).collect();
+        if !paths.is_empty() {
+            let p_ave =
+                //出块节点不算，要减一
+                paths.iter().map(|v| v.len() - 1).sum::<usize>() as f64 / paths.len() as f64;
+            if self.ntd > p_ave.ceil() as usize {
+                self.ntd = self.ntd - 1;
+            } else if self.ntd < p_ave.ceil() as usize {
+                self.ntd = self.ntd + 1;
+            }
+        }
+
+        let validators = self.validators.read().await.clone();
+        let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
+        self.current_slot = Arc::new(RwLock::new(SlotManager {
+            randao_seeds: vec![],
+            slot_duration: SLOT_DURATION,
+            current_epoch: current_slot.current_epoch + 1,
+            current_slot: 0,
+            next_seed,
+            start_timestamp: get_timestamp(),
+        }));
     }
 
     pub async fn get_current_slot(&self) -> SlotManager {
@@ -414,5 +452,14 @@ mod tests {
             let txs_cache = node0_tx_cache.read().await;
             info!("txs_cache:{:?}", txs_cache);
         }
+    }
+
+    #[tokio::test]
+    async fn test_flat_map() {
+        let a = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]];
+        let b = vec![vec![7, 8, 9], vec![10, 11, 12], vec![13, 14, 15]];
+        let c = vec![a, b];
+        let d: Vec<Vec<i32>> = c.iter().flat_map(|v| v.clone()).collect();
+        println!("{:?}", d);
     }
 }
