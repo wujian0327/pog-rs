@@ -80,7 +80,7 @@ impl WorldState {
         let validators = self.validators.read().await.clone();
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
 
-        if current_slot.current_slot >= 10 {
+        if current_slot.current_slot >= 9 {
             //更新epoch
             self.next_epoch().await;
         } else {
@@ -126,7 +126,7 @@ impl WorldState {
         let miner_validator = match self.consensus_type {
             ConsensusType::POS => Pos::select(validators.clone(), next_seed.clone(), bc).unwrap(),
             ConsensusType::POG => {
-                let k = self.ntd;
+                let k = self.ntd * 2;
                 Pog::select(validators.clone(), next_seed.clone(), bc, self.ntd, k).unwrap()
             }
         };
@@ -383,11 +383,11 @@ mod tests {
         });
         //become validator
         node0_sender
-            .send(Message::new_become_validator_msg())
+            .send(Message::new_become_validator_msg(2))
             .await
             .unwrap();
         node1_sender
-            .send(Message::new_become_validator_msg())
+            .send(Message::new_become_validator_msg(2))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;

@@ -14,8 +14,9 @@ def print_graph(bc: data_process.Blockchain,
     """
     生成仿红蓝热图风格的区块链传播网络图
     """
-    with open(json_file, 'r') as file:
-        data = json.load(file)
+    # with open(json_file, 'r') as file:
+    #     data = json.load(file)
+    data = bc.get_edges()
 
     G = nx.Graph()
     for u, v in data:

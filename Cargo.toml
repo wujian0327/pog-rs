@@ -17,7 +17,6 @@ rand = "0.8.5"
 secp256k1 = { version = "0.30.0", features = ["rand", "global-context", "recovery", "hashes"] }
 sha3 = "0.10.8"
 hex = "0.4"
-num-bigint = "0.4"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.41.1", features = ["full"] }
@@ -31,10 +30,9 @@ lazy_static = "1.5.0"
 dashmap = "6.1.0"
 rand_distr = "0.4"
 clap = { version = "4.0", features = ["derive"] }
-lzma-rs = "0.3.0"
 zstd = "0.13.0"
 flate2 = "1.1.1"
-base64 = "0.22.1"
+regex = "1.0"
 
 [dev-dependencies]
 env_logger = "0.11"

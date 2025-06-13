@@ -7,9 +7,11 @@ use crate::network::message::{Message, MessageType};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
 use log::{debug, error, info};
+use rand::Rng;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 ///通过Tokio的mpsc通道与其他节点交互
 ///负责出块、发送交易、发送seed
@@ -24,13 +26,32 @@ pub struct Node {
     pub neighbors: Vec<Neighbor>,
     pub world_state_sender: Sender<Message>,
     pub transaction_paths_cache: Arc<RwLock<Vec<TransactionPaths>>>,
+    pub node_type: NodeType,
+    pub sybil_nodes: Vec<Node>,
+}
+
+#[derive(Clone)]
+pub enum NodeType {
+    Honest,
+    Selfish,
+    Malicious,
+}
+
+impl Display for NodeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            NodeType::Honest => write!(f, "Honest"),
+            NodeType::Selfish => write!(f, "Selfish"),
+            NodeType::Malicious => write!(f, "Malicious"),
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct Neighbor {
-    index: u32,
-    address: String,
-    sender: Sender<Message>,
+    pub index: u32,
+    pub address: String,
+    pub sender: Sender<Message>,
 }
 
 impl Node {
@@ -54,6 +75,8 @@ impl Node {
             transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
             neighbors: Vec::new(),
             world_state_sender,
+            node_type: NodeType::Honest,
+            sybil_nodes: Vec::new(),
         }
     }
 
@@ -77,7 +100,51 @@ impl Node {
             transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
             neighbors: Vec::new(),
             world_state_sender,
+            node_type: NodeType::Honest,
+            sybil_nodes: Vec::new(),
         }
+    }
+
+    pub fn new_with_sybil_nodes(
+        index: u32,
+        epoch: u64,
+        slot: u64,
+        blockchain: Blockchain,
+        world_state_sender: Sender<Message>,
+        fake_node_num: i32,
+    ) -> Self {
+        let mut sybil_nodes: Vec<Node> = Vec::new();
+        for i in 0..fake_node_num {
+            let mut n = Node::new(
+                index * 1000 + i as u32,
+                epoch,
+                slot,
+                blockchain.clone(),
+                world_state_sender.clone(),
+            );
+            n.set_node_type(NodeType::Malicious);
+            sybil_nodes.push(n);
+        }
+        let wallet = Wallet::new();
+        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        Node {
+            index,
+            epoch,
+            slot,
+            wallet,
+            blockchain: Arc::new(RwLock::new(blockchain)),
+            sender,
+            receiver,
+            transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
+            neighbors: Vec::new(),
+            world_state_sender,
+            node_type: NodeType::Malicious,
+            sybil_nodes,
+        }
+    }
+
+    pub fn set_node_type(&mut self, node_type: NodeType) {
+        self.node_type = node_type;
     }
 
     pub async fn generate_block(&self, epoch: u64, slot: u64) -> Result<Block, BlockError> {
@@ -132,6 +199,15 @@ impl Node {
 
     pub fn short_address_with_index(&self) -> String {
         self.index.to_string() + "-" + self.short_address().as_str()
+    }
+
+    pub fn simple_print(&self) {
+        info!(
+            "node[{}],node_type[{}],node_address:{}",
+            self.index,
+            self.node_type,
+            self.get_address()
+        );
     }
 
     pub async fn run(&mut self) {
@@ -198,7 +274,7 @@ impl Node {
                     }
                 }
                 MessageType::SendTransactionPaths => {
-                    let transaction_paths = match TransactionPaths::from_json(msg.data) {
+                    let mut transaction_paths = match TransactionPaths::from_json(msg.data) {
                         Ok(t) => t,
                         Err(e) => {
                             error!("Node[{}] error: {}", self.index, e);
@@ -251,6 +327,54 @@ impl Node {
                             .retain(|t| t.transaction.hash != transaction_paths.transaction.hash);
                         transactions_cache.push(transaction_paths.clone())
                     }
+
+                    match self.node_type {
+                        NodeType::Selfish => {
+                            // drop propagation
+                            let mut rng = rand::thread_rng();
+                            let random_bool: bool = rng.gen_bool(0.5);
+                            if random_bool {
+                                continue;
+                            }
+                        }
+                        NodeType::Malicious => {
+                            //Sybil,伪造路径,再广播
+                            let mut wallet = self.wallet.clone();
+                            self.sybil_nodes.iter().for_each(|s| {
+                                transaction_paths.add_path(s.get_address(), wallet.clone());
+                                wallet = s.wallet.clone();
+                            });
+                            for neighbor_sender in self.neighbors.clone() {
+                                if msg.from == neighbor_sender.address {
+                                    continue;
+                                }
+                                let mut new_trans_paths = transaction_paths.clone();
+                                new_trans_paths
+                                    .add_path(neighbor_sender.address.clone(), wallet.clone());
+                                debug!(
+                                    "Sybil Node[{}] send transaction[{}] paths[{}] to Node[{}]",
+                                    self.short_address_with_index(),
+                                    new_trans_paths.transaction.hash,
+                                    new_trans_paths.to_paths_string(),
+                                    neighbor_sender.short_address_with_index()
+                                );
+                                let self_address = self.get_address();
+                                tokio::spawn(async move {
+                                    neighbor_sender
+                                        .sender
+                                        .send(Message::new_transaction_paths_msg(
+                                            new_trans_paths,
+                                            self_address,
+                                        ))
+                                        .await
+                                        .unwrap();
+                                });
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+
                     //并广播到邻居
                     for neighbor_sender in self.neighbors.clone() {
                         if msg.from == neighbor_sender.address {
@@ -342,7 +466,7 @@ impl Node {
                         }
                     };
                     let transaction = Transaction::new(to, 0, self.wallet.clone());
-                    let transaction_paths = TransactionPaths::new(transaction);
+                    let mut transaction_paths = TransactionPaths::new(transaction);
                     debug!(
                         "Node[{}] received msg[{}]: transaction hash[{}],path[{}]",
                         self.short_address_with_index(),
@@ -354,6 +478,44 @@ impl Node {
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
                         transactions_cache.push(transaction_paths.clone())
+                    }
+                    match self.node_type {
+                        NodeType::Malicious => {
+                            //Sybil,伪造路径,再广播
+                            let mut wallet = self.wallet.clone();
+                            self.sybil_nodes.iter().for_each(|s| {
+                                transaction_paths.add_path(s.get_address(), wallet.clone());
+                                wallet = s.wallet.clone();
+                            });
+                            for neighbor_sender in self.neighbors.clone() {
+                                if msg.from == neighbor_sender.address {
+                                    continue;
+                                }
+                                let mut new_trans_paths = transaction_paths.clone();
+                                new_trans_paths
+                                    .add_path(neighbor_sender.address.clone(), wallet.clone());
+                                debug!(
+                                    "Sybil Node[{}] send transaction[{}] paths[{}] to Node[{}]",
+                                    self.short_address_with_index(),
+                                    new_trans_paths.transaction.hash,
+                                    new_trans_paths.to_paths_string(),
+                                    neighbor_sender.short_address_with_index()
+                                );
+                                let self_address = self.get_address();
+                                tokio::spawn(async move {
+                                    neighbor_sender
+                                        .sender
+                                        .send(Message::new_transaction_paths_msg(
+                                            new_trans_paths,
+                                            self_address,
+                                        ))
+                                        .await
+                                        .unwrap();
+                                });
+                            }
+                            continue;
+                        }
+                        _ => {}
                     }
                     //广播交易
                     for neighbor_sender in self.neighbors.clone() {
@@ -399,13 +561,58 @@ impl Node {
                 }
                 MessageType::BecomeValidator => {
                     debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);
-                    self.world_state_sender
-                        .send(Message::new_receive_become_validator_msg(Validator::new(
-                            self.wallet.address.clone(),
-                            32f64,
-                        )))
-                        .await
-                        .unwrap();
+                    let default_state = 32f64;
+                    match self.node_type {
+                        NodeType::Honest => {
+                            self.world_state_sender
+                                .send(Message::new_receive_become_validator_msg(Validator::new(
+                                    self.wallet.address.clone(),
+                                    default_state,
+                                )))
+                                .await
+                                .unwrap();
+                        }
+                        NodeType::Selfish => {
+                            self.world_state_sender
+                                .send(Message::new_receive_become_validator_msg(Validator::new(
+                                    self.wallet.address.clone(),
+                                    default_state,
+                                )))
+                                .await
+                                .unwrap();
+                        }
+                        NodeType::Malicious => {
+                            let honest_node_num =
+                                usize::from_le_bytes(msg.data.try_into().unwrap());
+                            // 女巫攻击需要平分自己的stake
+                            // 测试sybil 占stake比例不同，这里需要手动分配比例,默认0.1
+                            // (x + good_node * 32)*0.1 = x ->x = good_node * 32 /9
+                            // (x + good_node * 32)*0.2 = x ->x = good_node * 32 /4
+                            // (x + good_node * 32)*0.3 = x ->x = good_node * 32 / (10 / 3 - 1)
+                            let sybil_stake =
+                                default_state * honest_node_num as f64 / (10.0 / 5.0 - 1.0);
+                            info!("Sybil node[{}] has {} stake", self.index, sybil_stake);
+                            let sybil_num = self.sybil_nodes.len();
+                            let stake = sybil_stake / (sybil_num + 1) as f64;
+                            self.world_state_sender
+                                .send(Message::new_receive_become_validator_msg(Validator::new(
+                                    self.wallet.address.clone(),
+                                    stake,
+                                )))
+                                .await
+                                .unwrap();
+                            for sybil in self.sybil_nodes.iter() {
+                                // 处理 sybil
+                                self.world_state_sender
+                                    .send(Message::new_receive_become_validator_msg(
+                                        Validator::new(sybil.wallet.address.clone(), stake),
+                                    ))
+                                    .await
+                                    .unwrap();
+                                info!("Node[{}] become validator->fake node", sybil.index);
+                            }
+                        }
+                    }
                 }
                 MessageType::UpdateSlot => {
                     let slot = match SlotManager::from_json(msg.data) {

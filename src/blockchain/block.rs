@@ -193,7 +193,7 @@ impl Block {
         serde_json::to_vec(&self).unwrap()
     }
 
-    pub fn simple_print(&self) {
+    pub fn simple_print_with_transaction(&self) {
         info!("Block[{}]:", self.header.index);
         info!("\t epoch:{}:", self.header.epoch);
         info!("\t slot:{}:", self.header.slot);
@@ -213,6 +213,15 @@ impl Block {
             }
             info!("{}", s);
         }
+    }
+
+    pub fn simple_print(&self) {
+        info!("Block[{}]:", self.header.index);
+        info!("\t epoch:{}:", self.header.epoch);
+        info!("\t slot:{}:", self.header.slot);
+        info!("\t miner:{}:", self.header.miner);
+        info!("\t timestamp:{}:", self.header.timestamp);
+        info!("\t transactions:{}:", self.body.transactions.len());
     }
 
     pub fn simple_print_no_transaction_string(&self) -> String {

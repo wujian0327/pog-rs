@@ -2,166 +2,310 @@ import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Patch, FancyArrowPatch
+
+"""
+Equal‐Sharing Strategy ->2
+在此策略下，其余节点将真实权益和网络贡献度——即$1-S$与$1-C$——在所有节点间平均分配，产生最小的总虚拟权益。
+
+Collusive‐Maximization Strategy ->3
+在此策略下，其余节点可联合行动，集中部分资源以最大化它们的总虚拟权益，从而对单个节点的出块概率造成最大的削弱。
+"""
 
 
 def block_probability(S, C, K=2, strategy=2):
-    """
-    计算出块概率的综合模型
-    S: 真实权益占比 (0-1) 网格
-    C: 网络贡献占比 (0-1) 网格
-    设 总共1000个节点，共1000的真实质押和1000的网络贡献度
-    """
     s_real = 1000 * S
     phi_s = np.where(S > 0.5, 0, 0.5 - S)
     s_v = s_real * (1 + K * C * phi_s)
-    # 计算剩下的999个节点虚拟权益的总和
     if strategy == 1:
-        # 1、我们这里使用均匀分配策略，平均分配策略得到的总虚拟权益是最小的
-        s_real_one = 1000 * (1 - S) / 999
-        phi_s = (1 - S) / 999
-        phi_s = np.where(phi_s > 0.5, 0, 0.5 - phi_s)
-        c = (1 - C) / 999
-        s_v_one = s_real_one * (1 + K * c * phi_s)
-        s_v_rest = s_v_one * 999
-        s_v_total = s_v + s_v_rest
-        result = s_v / s_v_total
-        return result
+        # 自己可取得的最大虚拟权益
+        # 因为自己的真实权益少于50%,找一个50%的节点，把剩余网络贡献度都给它
+        # 则需要2个节点
+        s_real_node_1 = 1000 * 0.5
+        s_v__node_1 = s_real_node_1
+        s_real_node_2 = 1000 * (1 - 0.5 - S)
+        s_v__node_2 = s_real_node_2
+        s_v_total = s_v + s_v__node_1 + s_v__node_2
+        return s_v / s_v_total
     elif strategy == 2:
-        # 2、假设剩下节点可以串谋，利用剩余资源构成出最大的总虚拟权益
-        # 其实只用集中部分资源就行
-        s_v_rest = [[]]
-        sum = 0
+        # 其他节点平均分配策略
+        sum_max = 0
+        s_v_rest = None
         for i in range(1, 100):
             s_real_one = 1000 * (1 - S) / i
-            phi_s = (1 - S) / i
-            phi_s = np.where(phi_s > 0.5, 0, 0.5 - phi_s)
-            c = (1 - C) / i
-            s_v_one = s_real_one * (1 + K * c * phi_s)
-            s_v_rest_i = s_v_one * i
-            if np.sum(s_v_rest_i) > sum:
-                sum = np.sum(s_v_rest_i)
-                s_v_rest = s_v_rest_i
-                print(i)
+            phi_s_i = np.where((1 - S) / i > 0.5, 0, 0.5 - (1 - S) / i)
+            s_v_one = s_real_one * (1 + K * (1 - C) / i * phi_s_i)
+            total = np.sum(s_v_one * i)
+            if total > sum_max:
+                sum_max = total
+                s_v_rest = s_v_one * i
         s_v_total = s_v + s_v_rest
-        result = s_v / s_v_total
-        return result
+        return s_v / s_v_total
     elif strategy == 3:
-        s_v_rest = [[]]
-        # 一个节点占
-        sum = float('inf')
+        # 其他节点串谋使节点A虚拟权益比值最小
+        sum_min = np.inf
+        s_v_rest = None
         for i in range(1, 50):
             s_real_one = 1000 * (1 - S) / i
-            phi_s = (1 - S) / i
-            phi_s = np.where(phi_s > 0.5, 0, 0.5 - phi_s)
-            c = (1 - C) / i
-            s_v_one = s_real_one * (1 + K * c * phi_s)
-            s_v_rest_i = s_v_one * i
-            if np.sum(s_v_rest_i) < sum:
-                sum = np.sum(s_v_rest_i)
-                s_v_rest = s_v_rest_i
-                print(i)
+            phi_s_i = np.where((1 - S) / i > 0.5, 0, 0.5 - (1 - S) / i)
+            s_v_one = s_real_one * (1 + K * (1 - C) / i * phi_s_i)
+            total = np.sum(s_v_one * i)
+            if total < sum_min:
+                sum_min = total
+                s_v_rest = s_v_one * i
         s_v_total = s_v + s_v_rest
-        result = s_v / s_v_total
-        return result
+        return s_v / s_v_total
 
 
-def print_selection(K=4):
+def draw_one(K=4):
     stake = np.linspace(0, 0.5, 100)
     contribution = np.linspace(0, 1, 100)
     S, C = np.meshgrid(stake, contribution)
-    Z = block_probability(S, C, K, strategy=2)
-    Z_max = block_probability(S, C, K, strategy=3)
+    Z_adv = block_probability(S, C, K, strategy=2)
+    Z_col = block_probability(S, C, K, strategy=3)
 
-    # 创建二维坐标网格
-    fig = plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # ===== 关键改进部分 =====
-    # 新颜色方案：紫色系 vs 黄绿色系
-    ADV_CMAP = cm.Purples  # 对抗策略：紫色渐变
-    COL_CMAP = cm.Greens  # 协作策略：绿色渐变
-    EDGE_COLOR = 'k'  # 统一边缘线颜色
-    ALPHA = 0.85  # 降低透明度增强对比
-
-    # 绘制对抗策略曲面（带深色边缘）
-    surf1 = ax.plot_surface(
-        S, C, Z,
-        cmap=ADV_CMAP,
-        edgecolor=EDGE_COLOR,
-        linewidth=0.8,
-        alpha=ALPHA,
-        rstride=2, cstride=2,
-        antialiased=True
+    # 对抗策略：紫色半透明实面
+    surf_adv = ax.plot_surface(
+        S, C, Z_adv,
+        cmap=cm.Purples,
+        alpha=0.6,
+        linewidth=0,
+        antialiased=True,
+        rstride=6, cstride=6
     )
 
-    # 绘制协作策略曲面（带虚线边缘）
-    surf2 = ax.plot_surface(
-        S, C, Z_max,
-        cmap=COL_CMAP,
-        edgecolor='gray',
-        linestyle=':',  # 虚线边缘
+    # 协作策略：灰色线框
+    wire_col = ax.plot_wireframe(
+        S, C, Z_col,
+        rstride=6, cstride=6,
         linewidth=0.8,
-        alpha=0.5,
-        rstride=2, cstride=2,
-        antialiased=True
+        color='gray'
     )
 
-    # surf = ax.plot_surface(S, C, Z,
-    #                        cmap='viridis',  # 颜色映射
-    #                        edgecolor='k',  # 网格线颜色
-    #                        linewidth=0.3,  # 网格线宽度
-    #                        antialiased=True,  # 抗锯齿
-    #                        rstride=5,  # 行步长（降低密度）
-    #                        cstride=5)  # 列步长
-    # surf2 = ax.plot_surface(S, C, Z_max,
-    #                         cmap='viridis',  # 颜色映射
-    #                         edgecolor='k',  # 网格线颜色
-    #                         linewidth=0.3,  # 网格线宽度
-    #                         antialiased=True,  # 抗锯齿
-    #                         rstride=5,  # 行步长（降低密度）
-    #                         cstride=5)  # 列步长
+    # —— 在 z=50% 处添加等高线 ——
+    # 对 Equal‑Sharing 面
+    ax.contour(
+        S, C, Z_adv,
+        levels=[0.5],  # 只画 z=0.5 的等高线
+        zdir='z',
+        offset=0.5,  # 将它放到 z=0.5 平面上
+        colors=('purple',),
+        linestyles='-',
+        linewidths=2
+    )
+    # 对 Full‑Confrontation 面
+    ax.contour(
+        S, C, Z_col,
+        levels=[0.5],
+        zdir='z',
+        offset=0.5,
+        colors=('gray',),
+        linestyles='--',
+        linewidths=2
+    )
 
-    # 设置视觉参数
-    ax.view_init(elev=30, azim=150)  # 设置视角角度
-    ax.set_xlabel('Real Stake Share (%)', labelpad=8, fontsize=12)
-    ax.set_ylabel('Network Contribution Share (%)', labelpad=8, fontsize=12)
-    ax.set_zlabel('Virtual Stake Share (%)', labelpad=8, fontsize=12)
-    # ax.set_title(f'K={K}', fontsize=12, pad=0)
+    # —— 在 z 轴上标注 “50%” ——
+    ax.text(
+        0.5, 1, 0.5, '50%',
+        color='black',
+        fontsize=12,
+        ha='left',
+        va='bottom'
+    )
 
-    ax.xaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
-    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
-    ax.zaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
+    # 视角、标签
+    ax.view_init(elev=35, azim=135)
+    # ax.set_proj_type('ortho')
+    # ax.set_box_aspect((1, 1, 1))
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+        axis._axinfo['grid']['color'] = (0, 0, 0, 0.2)
+        axis._axinfo['grid']['linewidth'] = 0.5  # 可选：线宽调小一些
+    ax.set_xlabel('Real Stake Share', fontsize=16, labelpad=10)
+    ax.set_ylabel('Network Contribution', fontsize=16, labelpad=10)
+    ax.set_zlabel('Virtual Stake Share', fontsize=16, labelpad=10)
 
-    legend_elements = [
-        Rectangle((0, 0), 1, 1, fc='blue', alpha=0.6, label='Adversarial Strategy (Max)'),
-        Rectangle((0, 0), 1, 1, fc='red', alpha=0.6, label='Collaborative Strategy (Min)')
+    ax.tick_params(axis='x', labelsize=12)
+    ax.tick_params(axis='y', labelsize=12)
+    ax.tick_params(axis='z', labelsize=12)
+
+    # 百分比刻度
+    ax.set_xticks([0, 0.25, 0.5])
+    ax.set_yticks([0, 0.5, 1.0])
+    ax.set_zticks([0, 0.25, 0.5])
+    fmt = matplotlib.ticker.PercentFormatter(1.0)
+    for ax_i in (ax.xaxis, ax.yaxis, ax.zaxis):
+        ax_i.set_major_formatter(fmt)
+    ax.tick_params(labelsize=10)
+
+    # 让百分号标签更透明
+    for lbl in ax.get_xticklabels():
+        lbl.set_alpha(0.5)
+    for lbl in ax.get_yticklabels():
+        lbl.set_alpha(0.5)
+    for lbl in ax.get_zticklabels():
+        lbl.set_alpha(0.5)
+
+    # 简洁图例内嵌
+    legend_elems = [
+        Patch(edgecolor='gray', facecolor='none', label='Equal‑Sharing'),
+        Patch(edgecolor='purple', facecolor='none', label='Full-Confrontation'),
     ]
-    ax.legend(handles=legend_elements, loc='upper right')
-    # 配置轴刻度百分比格式
-    for axis in [ax.xaxis, ax.yaxis, ax.zaxis]:
-        axis.set_major_formatter('{x:.0%}')
-
-    # 添加颜色条
-    # cbar = plt.colorbar(surf, shrink=0.5, aspect=10)
-    # cbar.set_label('Probability Intensity', rotation=270, labelpad=20)
-
-    # 添加参考平面
-    # ax.plot_surface(S, C, np.zeros_like(Z), color='gray', alpha=0.2)  # 底部平面
-
-    # 突出显示关键阈值线（示例）
-    # ax.plot(stake, np.zeros_like(stake), block_probability(stake, 0),
-    #         'r--', lw=2, label='Min Contribution')
-
-    # ax.plot(stake, np.zeros_like(stake),
-    #         'r--', lw=2, label='Min Contribution')
+    ax.legend(handles=legend_elems,
+              loc='upper left',
+              fontsize=12,
+              frameon=False)
 
     plt.tight_layout()
-    # plt.savefig(f'../figures/K{K}.png', dpi=600, bbox_inches=matplotlib.transforms.Bbox([[1.2, 0], [10, 7.5]]))
+    plt.show()
+
+
+def draw_one_small(K=4):
+    stake = np.linspace(0, 0.5, 100)
+    contribution = np.linspace(0, 1, 100)
+    S, C = np.meshgrid(stake, contribution)
+    Z_adv = block_probability(S, C, K, strategy=2)
+    Z_col = block_probability(S, C, K, strategy=3)
+
+    fig = plt.figure(figsize=(5, 4))  # 论文单栏宽度大约 5×4 inches
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Adv 策略：半透明紫色面，稀疏网格
+    ax.plot_surface(
+        S, C, Z_adv,
+        cmap=cm.Purples,
+        alpha=0.5,
+        rstride=8, cstride=8,
+        linewidth=0.8,
+        edgecolor='purple',
+        antialiased=True,
+        shade=False
+    )
+
+    # Col 策略：半透明灰色面，稀疏虚线
+    ax.plot_surface(
+        S, C, Z_col,
+        cmap=cm.Greys,
+        alpha=0.5,
+        rstride=8, cstride=8,
+        linewidth=0.8,
+        edgecolor='gray',
+        antialiased=True,
+        linestyles='--',
+        shade=False
+    )
+
+    # 视角
+    ax.view_init(elev=30, azim=120)
+
+    # 去掉次级网格，仅保留坐标轴底面
+    ax.grid(False)
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+        axis.set_pane_color((1, 1, 1, 1))
+        axis._axinfo['grid']['color'] = (0, 0, 0, 0)
+
+    # 精简刻度：三个点
+    ax.set_xticks([0, 0.25, 0.5])
+    ax.set_yticks([0, 0.5, 1.0])
+    ax.set_zticks([0, 0.25, 0.5])
+    fmt = matplotlib.ticker.PercentFormatter(1.0)
+    ax.xaxis.set_major_formatter(fmt)
+    ax.yaxis.set_major_formatter(fmt)
+    ax.zaxis.set_major_formatter(fmt)
+    ax.tick_params(labelsize=10)
+
+    # 轴标签
+    ax.set_xlabel('Real Stake', fontsize=12, labelpad=4)
+    ax.set_ylabel('Network Contrib.', fontsize=12, labelpad=4)
+    ax.set_zlabel('Virtual Stake', fontsize=12, labelpad=4)
+
+    # 简洁图例内嵌
+    legend_elems = [
+        Patch(edgecolor='purple', facecolor='none', label='Other Nodes Equal‑Sharing'),
+        Patch(edgecolor='gray', facecolor='none', label='Other Nodes Collusive‑Maximization')
+    ]
+    ax.legend(handles=legend_elems,
+              loc='upper left',
+              fontsize=10,
+              frameon=False)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def draw_one_wire(K=4):
+    stake = np.linspace(0, 0.5, 100)
+    contribution = np.linspace(0, 1, 100)
+    S, C = np.meshgrid(stake, contribution)
+    Z_eq = block_probability(S, C, K, strategy=2)
+    Z_col = block_probability(S, C, K, strategy=3)
+
+    fig = plt.figure(figsize=(5, 4))  # 单栏宽度小图
+    ax = fig.add_subplot(111, projection='3d')
+
+    # 主网格辅助线（淡化）
+    for xi in [0.0, 0.25, 0.5]:
+        ax.plot_wireframe(
+            np.full((2, 2), xi),
+            np.array([[0, 1], [0, 1]]),
+            np.array([[0, 0], [1, 1]]),
+            color='lightgray', linestyle=':', linewidth=0.5, alpha=0.2
+        )
+    for yi in [0.0, 0.5, 1.0]:
+        ax.plot_wireframe(
+            np.array([[0, 0.5], [0, 0.5]]),
+            np.full((2, 2), yi),
+            np.array([[0, 0], [1, 1]]),
+            color='lightgray', linestyle=':', linewidth=0.5, alpha=0.2
+        )
+
+    # Others’ Equal‑Sharing：黑色实线
+    ax.plot_wireframe(
+        S, C, Z_eq,
+        rstride=10, cstride=10,
+        color='black', linewidth=1.2, label='Others’ Equal‑Sharing'
+    )
+    # Others’ Collusive‑Maximization：灰色虚线
+    ax.plot_wireframe(
+        S, C, Z_col,
+        rstride=10, cstride=10,
+        color='gray', linewidth=1.2, linestyle='--', label='Others’ Collusive‑Maximization'
+    )
+
+    # 视角
+    ax.view_init(elev=30, azim=120)
+
+    # 坐标背景 & 网格
+    ax.grid(False)
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+        axis.set_pane_color((1, 1, 1, 1))
+        axis._axinfo['grid']['color'] = (0, 0, 0, 0)
+
+    # 刻度 & 百分比
+    ax.set_xticks([0, 0.25, 0.5])
+    ax.set_yticks([0, 0.5, 1.0])
+    ax.set_zticks([0, 0.25, 0.5])
+    fmt = matplotlib.ticker.PercentFormatter(1.0)
+    for ax_i in (ax.xaxis, ax.yaxis, ax.zaxis):
+        ax_i.set_major_formatter(fmt)
+    ax.tick_params(labelsize=10)
+
+    # 轴标签
+    ax.set_xlabel('Real Stake', fontsize=12, labelpad=4)
+    ax.set_ylabel('Network Contrib.', fontsize=12, labelpad=4)
+    ax.set_zlabel('Virtual Stake', fontsize=12, labelpad=4)
+
+    # 图例内嵌
+    ax.legend(loc='upper left', fontsize=10, frameon=False)
+
+    plt.tight_layout()
     plt.show()
 
 
 if __name__ == '__main__':
-    # for i in range(0, 8, 2):
-    #     print_selection(i)
-    print_selection(5)
+    draw_one(8)

@@ -122,6 +122,15 @@ class Blockchain:
         self.edge_path = paths
         return paths
 
+    def get_edges(self) -> [[]]:
+        edges: list[list[str]] = []
+        if self.edge_path is None:
+            self.count_edges_path()
+        for x in self.edge_path.keys():
+            nodes = x.split(">")
+            edges.append([nodes[0], nodes[1]])
+        return edges
+
 
 def get_blockchain_from_json(path="../blockchain.json"):
     with open(path, 'r') as f:
@@ -150,6 +159,7 @@ if __name__ == '__main__':
     count_edges_path = bc.edge_path
     print('edges_path', len(count_edges_path.keys()))
     print('edges_path', count_edges_path)
+    print('edges', bc.get_edges())
 
     print("top", bc.get_node_path_top())
     print("top", bc.get_node_path_percentage(bc.get_node_path_top()))

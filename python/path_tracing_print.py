@@ -19,32 +19,29 @@ def block_size():
                  7000, 7174, 7348, 7522, 7696, 7870, 8044, 8218, 8392, 8566, 8740, 8914, 9088, 9262]
 
     # 绘制折线图
-    plt.figure(figsize=(8, 5))
+    plt.figure(figsize=(8, 6), dpi=100)
     plt.plot(indices, bls,
              linestyle='-',
-             linewidth=2.5,
-             color='#2c7bb6',
-             label='bls',
-             alpha=0.9)
+             linewidth=2,
+             color='blue',
+             label='BLS')
     plt.plot(indices, bls_zstd_compress,
              linestyle='-',
-             linewidth=2.5,
-             color='#72b036',
-             label='bls_zstd_compress',
-             alpha=0.9)
+             linewidth=2,
+             color='red',
+             label='BLS_ZSTD')
     plt.plot(indices, secp256k1,
              linestyle='-',
-             linewidth=2.5,
-             color='#d7191c',
-             label='Secp256k1',
-             alpha=0.9)
+             linewidth=2,
+             color='green',
+             label='Secp256k1')
 
     # 添加标题和标签
-    plt.title('Path Tracing Block Size Comparison')
-    plt.xlabel('Number of Paths')
-    plt.ylabel('Block Size (Bytes)')
+    # plt.title('Path Tracing Block Size Comparison')
+    plt.xlabel('Number of Paths', fontsize=18)
+    plt.ylabel('Block Size (Bytes)', fontsize=18)
     plt.legend()
-    plt.grid(True)
+    plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
 
     # 显示图表
     plt.show()
@@ -63,33 +60,33 @@ def verify_time():
                  10537, 11280, 11687, 13345, 13828, 13719, 14283, 15404, 16051, 16140, 16731, 17140, 18670, 18880,
                  19549, 20618, 20932, 22164, 22259, 23128, 23160, 23459, 25028, 25137, 26462, 26637, 27620, 27865,
                  28135, 30603, 29699, 29839, 32766]
+    bls = [x / 1000 for x in bls]
+    bls_with_decompress = [x / 1000 for x in bls_with_decompress]
+    secp256k1 = [x / 1000 for x in secp256k1]
 
     # 设置样式
     # sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(8, 5))
+    plt.figure(figsize=(8, 6), dpi=100)
     # 绘制折线图（移除了数据点标记）
     plt.plot(indices, bls,
              linestyle='-',
-             linewidth=2.5,
-             color='#2c7bb6',
-             label='bls',
-             alpha=0.9)
+             linewidth=2,
+             color='blue',
+             label='BLS')
     plt.plot(indices, bls_with_decompress,
              linestyle='-',
-             linewidth=2.5,
-             color='#72b036',
-             label='bls_zstd_decompress',
-             alpha=0.9)
+             linewidth=2,
+             color='red',
+             label='BLS_ZSTD')
     plt.plot(indices, secp256k1,
              linestyle='-',
-             linewidth=2.5,
-             color='#d7191c',
-             label='Secp256k1',
-             alpha=0.9)
+             linewidth=2,
+             color='green',
+             label='Secp256k1')
     # 装饰样式
-    plt.title('Path Tracing Verify Algorithm Comparison', )
-    plt.xlabel('Number of Paths')
-    plt.ylabel('Verify Time (Microseconds)', )
+    # plt.title('Path Tracing Verify Algorithm Comparison', )
+    plt.xlabel('Number of Paths', fontsize=18)
+    plt.ylabel('Verify Time (Millisecond)', fontsize=18)
     # 自动优化坐标轴范围
     # plt.ylim(0, max(secp256k1 + bls) * 1.1)
     # 图例美化
@@ -99,10 +96,10 @@ def verify_time():
     #            shadow=True,
     #            borderpad=1)
     plt.legend()
-    plt.grid(True)
+    plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     plt.show()
 
 
 if __name__ == '__main__':
     block_size()
-    verify_time()
+    # verify_time()

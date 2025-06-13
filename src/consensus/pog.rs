@@ -20,11 +20,19 @@ impl Pog {
         let last_block = blockchain.get_last_block();
         let paths = last_block.get_all_paths();
         let c_n = Pog::cal_network_contribution(paths, ntd, validators.clone());
+        info!(
+            "Calculate network contribution: {}",
+            serde_json::to_string(&c_n)?
+        );
         let s_real_map: HashMap<String, f64> = validators
             .iter()
             .map(|x| (x.address.to_string(), x.stake))
             .collect();
         let s_virtual_map = Pog::cal_virtual_stake(s_real_map, c_n, k);
+        info!(
+            "Calculate virtual stake: {}",
+            serde_json::to_string(&s_virtual_map)?
+        );
         let validators: Vec<Validator> = validators
             .iter()
             .map(|x| {

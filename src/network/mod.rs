@@ -3,7 +3,7 @@ use crate::blockchain::Blockchain;
 use crate::consensus::ConsensusType;
 use crate::network::graph::TopologyType;
 use crate::network::message::Message;
-use crate::network::node::{Neighbor, Node};
+use crate::network::node::{Neighbor, Node, NodeType};
 use crate::network::world_state::WorldState;
 use futures::future::join_all;
 use log::info;
@@ -22,12 +22,13 @@ pub mod world_state;
 
 pub async fn start_network(
     node_num: u32,
+    malicious_node_num: u32,
+    fake_node_num: u32,
     trans_num_per_second: u32,
     consensus: ConsensusType,
     topology: TopologyType,
 ) {
     info!("Consensus Type is {}", consensus);
-    tokio::time::sleep(Duration::from_secs(1)).await;
 
     //1. new blockchain
     let genesis_block = Block::gen_genesis_block();
@@ -40,33 +41,46 @@ pub async fn start_network(
     info!("Generate world state");
 
     //3. nodes
-    let mut node_map: HashMap<String, Node> = (0..node_num)
+    let mut node_map: HashMap<String, Node> = (0..node_num + malicious_node_num)
         .map(|i| {
-            let node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
-            (node.get_address(), node)
+            if i < node_num {
+                let node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                node.simple_print();
+                (node.get_address(), node)
+            } else {
+                let node = Node::new_with_sybil_nodes(
+                    i,
+                    0,
+                    0,
+                    bc.clone(),
+                    world_sender.clone(),
+                    fake_node_num as i32,
+                );
+                node.simple_print();
+                (node.get_address(), node)
+            }
         })
         .collect();
+
     let nodes_sender: HashMap<String, Sender<Message>> = node_map
         .iter()
         .map(|(address, node)| (address.clone(), node.sender.clone()))
         .collect();
+
     let nodes_index: HashMap<String, u32> = node_map
         .iter()
         .map(|(address, node)| (address.clone(), node.index))
         .collect();
     let nodes_address: Vec<String> = node_map.keys().cloned().collect();
-    info!("Generate {} nodes", node_num);
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    info!("Generate {} nodes", node_num + malicious_node_num);
 
     //4. gen the network graph
     let graph = match topology {
-        TopologyType::ER => graph::random_er_graph(nodes_address.clone(), 0.1),
+        TopologyType::ER => graph::random_er_graph(nodes_address.clone(), 0.2),
         TopologyType::BA => graph::random_graph_with_ba_network(nodes_address.clone()),
     };
-    // let graph = graph::random_graph(nodes_address.clone(), 0.3);
-    // let graph = graph::random_graph_with_ba_network(nodes_address.clone());
     info!("Generate network graph[{}]", topology);
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     //deal the node neighborhoods
     for edge in graph.edge_indices() {
@@ -75,24 +89,51 @@ pub async fn start_network(
         let to = graph[target].clone();
         {
             let node_from = node_map.get_mut(&from).unwrap();
-            node_from.neighbors.push(Neighbor::new(
-                *nodes_index.get(&to).unwrap(),
-                to.clone(),
-                nodes_sender.get(&to).unwrap().clone(),
-            ));
+            if node_from
+                .neighbors
+                .iter()
+                .find(|&x| x.address.clone() == to)
+                .is_none()
+            {
+                node_from.neighbors.push(Neighbor::new(
+                    *nodes_index.get(&to).unwrap(),
+                    to.clone(),
+                    nodes_sender.get(&to).unwrap().clone(),
+                ));
+            }
         }
         {
             let node_to = node_map.get_mut(&to).unwrap();
-            node_to.neighbors.push(Neighbor::new(
-                *nodes_index.get(&from).unwrap(),
-                from.clone(),
-                nodes_sender.get(&from).unwrap().clone(),
-            ));
+            if node_to
+                .neighbors
+                .iter()
+                .find(|&x| x.address.clone() == from)
+                .is_none()
+            {
+                node_to.neighbors.push(Neighbor::new(
+                    *nodes_index.get(&from).unwrap(),
+                    from.clone(),
+                    nodes_sender.get(&from).unwrap().clone(),
+                ));
+            }
         }
     }
 
     //world should communicate with all node
     world.nodes_sender = nodes_sender.clone();
+    node_map
+        .iter()
+        .for_each(|(_address, node)| match node.node_type {
+            NodeType::Malicious => {
+                // sybil的消息,由主节点控制
+                node.sybil_nodes.iter().for_each(|sybil| {
+                    world
+                        .nodes_sender
+                        .insert(sybil.get_address(), node.sender.clone());
+                });
+            }
+            _ => {}
+        });
 
     //start the world and all node
     let mut tasks = vec![];
@@ -114,7 +155,7 @@ pub async fn start_network(
     for (k, sender) in nodes_sender.clone() {
         info!("Node[{}] become validator", nodes_index.get(&k).unwrap());
         sender
-            .send(Message::new_become_validator_msg())
+            .send(Message::new_become_validator_msg(node_num as usize))
             .await
             .unwrap();
     }

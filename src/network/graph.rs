@@ -19,10 +19,10 @@ impl Display for TopologyType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match *self {
             TopologyType::ER => {
-                write!(f, "ER")
+                write!(f, "er")
             }
             TopologyType::BA => {
-                write!(f, "BA")
+                write!(f, "ba")
             }
         }
     }

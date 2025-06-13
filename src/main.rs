@@ -11,19 +11,28 @@ use std::fs::File;
 #[derive(Parser, Debug)]
 #[clap(version = "1.0", author = "wujian", about = "POG协议模拟")]
 struct Args {
-    /// 节点个数
+    /// 节点个数(Node number)
     #[clap(short, long, default_value = "50")]
     node_num: u32,
 
-    /// 每秒交易个数（泊松分布）
+    /// 恶意节点个数(Sybil node)(Malicious node num)
+    #[clap(short, long, default_value = "0")]
+    malicious_node_num: u32,
+
+    /// 恶意节点伪造身份的数量(Fake identities num)
+    /// only malicious_node_num > 0 usefully
+    #[clap(short, long, default_value = "0")]
+    fake_node_num: u32,
+
+    /// 每秒交易个数（泊松分布）(Number of transactions per second)
     #[clap(short, long, default_value = "10")]
     trans_num: u32,
 
-    /// 共识算法类型
+    /// 共识算法类型 (Consensus algorithm type)
     #[arg(short, long, default_value_t = ConsensusType::POG)]
     consensus: ConsensusType,
 
-    ///拓扑结构
+    ///拓扑结构 (Topology)
     #[arg(long, default_value_t = TopologyType::BA)]
     topology: TopologyType,
 }
@@ -36,7 +45,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //log setting
     init_logger()?;
 
-    network::start_network(args.node_num, args.trans_num, args.consensus, args.topology).await;
+    network::start_network(
+        args.node_num,
+        args.malicious_node_num,
+        args.fake_node_num,
+        args.trans_num,
+        args.consensus,
+        args.topology,
+    )
+    .await;
     Ok(())
 }
 
