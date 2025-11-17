@@ -27,6 +27,7 @@ pub async fn start_network(
     trans_num_per_second: u32,
     consensus: ConsensusType,
     topology: TopologyType,
+    gossip_delay_ms: u64,
 ) {
     info!("Consensus Type is {}", consensus);
 
@@ -44,7 +45,7 @@ pub async fn start_network(
     let mut node_map: HashMap<String, Node> = (0..node_num + malicious_node_num)
         .map(|i| {
             if i < node_num {
-                let node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                let node = Node::new(i, 0, 0, bc.clone(), world_sender.clone(), gossip_delay_ms);
                 node.simple_print();
                 (node.get_address(), node)
             } else {
@@ -55,6 +56,7 @@ pub async fn start_network(
                     bc.clone(),
                     world_sender.clone(),
                     fake_node_num as i32,
+                    gossip_delay_ms,
                 );
                 node.simple_print();
                 (node.get_address(), node)

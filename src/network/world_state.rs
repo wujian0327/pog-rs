@@ -345,8 +345,8 @@ mod tests {
         let validators = world.validators.clone();
         let current_slot = world.current_slot.clone();
 
-        let mut node0 = Node::new(0, 0, 0, blockchain.clone(), world_sender.clone());
-        let mut node1 = Node::new(1, 0, 0, blockchain.clone(), world_sender.clone());
+        let mut node0 = Node::new(0, 0, 0, blockchain.clone(), world_sender.clone(), 0);
+        let mut node1 = Node::new(1, 0, 0, blockchain.clone(), world_sender.clone(), 0);
         let node0_sender = node0.sender.clone();
         let node1_sender = node1.sender.clone();
         let node0_wallet = node0.wallet.clone();
