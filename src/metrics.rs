@@ -37,6 +37,7 @@ pub struct EpochMetrics {
     pub miner_distribution: HashMap<String, usize>,
     pub path_stats: PathStats,
     pub stake_concentration: f64,
+    pub consensus_type: String,
     pub consensus_state: String,
     pub pog_state: Option<PogEpochMetrics>,
 }
@@ -136,7 +137,7 @@ impl EpochMetrics {
             self.path_stats.max_length,
             self.path_stats.median_length,
             self.stake_concentration,
-            "epoch_consensus",
+            self.consensus_type,
             self.consensus_state,
             ntd,
             avg_c_n,

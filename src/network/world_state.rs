@@ -2,8 +2,9 @@ use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::pog::PogConsensus;
 use crate::consensus::pos::PosConsensus;
+use crate::consensus::pow::PowConsensus;
 use crate::consensus::{Consensus, ConsensusType, RandaoSeed, Validator};
-use crate::metrics::{self, calculate_stake_concentration, EpochMetrics, PathStats, SlotMetrics};
+use crate::metrics::{self, calculate_stake_concentration, EpochMetrics, SlotMetrics};
 use crate::network::message::{Message, MessageType};
 use crate::tools::get_timestamp;
 use crate::{consensus, tools};
@@ -18,6 +19,11 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tokio::{task, time};
+
+static SLOT_DURATION: Duration = Duration::from_secs(5);
+static SLOT_PER_EPOCH: u64 = 5;
+static POW_INIT_DIFFICULTY: usize = 20; //only pow
+static POW_MAX_THREADS: usize = 8; // only pow
 
 /// 全局状态，用于管理时隙、vdf投票，余额等等
 /// 也可以用于与所有的节点进行通信
@@ -35,8 +41,6 @@ pub struct WorldState {
     metrics_slots_file: Option<std::fs::File>,
     metrics_epochs_file: Option<std::fs::File>,
 }
-
-static SLOT_DURATION: Duration = Duration::from_secs(5);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SlotManager {
@@ -59,6 +63,11 @@ impl WorldState {
         let consensus: Box<dyn Consensus> = match consensus_type {
             ConsensusType::POG => Box::new(PogConsensus::new(0)),
             ConsensusType::POS => Box::new(PosConsensus::new()),
+            ConsensusType::POW => Box::new(PowConsensus::new(
+                POW_INIT_DIFFICULTY,
+                POW_MAX_THREADS,
+                SLOT_DURATION,
+            )),
         };
         // Initialize metrics files
         let metrics_slots_file = std::fs::OpenOptions::new()
@@ -101,7 +110,7 @@ impl WorldState {
         let validators = self.validators.read().await.clone();
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
 
-        if current_slot.current_slot >= 9 {
+        if current_slot.current_slot >= SLOT_PER_EPOCH - 1 {
             //更新epoch
             self.next_epoch().await;
         } else {
@@ -315,6 +324,7 @@ impl WorldState {
             miner_distribution,
             path_stats: path_stats,
             stake_concentration,
+            consensus_type: self.consensus.name().to_string(),
             consensus_state,
             pog_state: None,
         };
@@ -409,10 +419,16 @@ impl WorldState {
                 let time_interval = {
                     let shared_self = shared_self.read().await;
                     let current_slot = shared_self.get_current_slot().await;
-                    let time_interval = current_slot.start_timestamp
-                        + current_slot.slot_duration.as_secs()
-                        - get_timestamp();
-                    Duration::from_secs(time_interval)
+                    let target_time =
+                        current_slot.start_timestamp + current_slot.slot_duration.as_secs();
+                    let current_time = get_timestamp();
+
+                    // 如果已经超过目标时间，立即触发下一个 slot
+                    if current_time >= target_time {
+                        Duration::from_secs(0)
+                    } else {
+                        Duration::from_secs(target_time - current_time)
+                    }
                 };
                 let deadline = Instant::now() + time_interval;
                 time::sleep_until(deadline).await;

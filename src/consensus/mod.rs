@@ -13,11 +13,13 @@ use std::fmt::{Display, Formatter};
 
 pub mod pog;
 pub mod pos;
+pub mod pow;
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
 pub enum ConsensusType {
     POS,
     POG,
+    POW,
 }
 
 impl Display for ConsensusType {
@@ -28,6 +30,9 @@ impl Display for ConsensusType {
             }
             ConsensusType::POG => {
                 write!(f, "pog")
+            }
+            ConsensusType::POW => {
+                write!(f, "pow")
             }
         }
     }
