@@ -35,6 +35,10 @@ struct Args {
     ///拓扑结构 (Topology)
     #[arg(long, default_value_t = TopologyType::BA)]
     topology: TopologyType,
+
+    /// Gossip传播延迟（毫秒）(Gossip propagation delay in milliseconds)
+    #[clap(short = 'g', long, default_value = "0")]
+    gossip_delay_ms: u64,
 }
 
 #[tokio::main]
@@ -52,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.trans_num,
         args.consensus,
         args.topology,
+        args.gossip_delay_ms,
     )
     .await;
     Ok(())

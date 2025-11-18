@@ -28,6 +28,7 @@ pub struct Node {
     pub transaction_paths_cache: Arc<RwLock<Vec<TransactionPaths>>>,
     pub node_type: NodeType,
     pub sybil_nodes: Vec<Node>,
+    pub gossip_delay_ms: u64,
 }
 
 #[derive(Clone)]
@@ -61,6 +62,7 @@ impl Node {
         slot: u64,
         blockchain: Blockchain,
         world_state_sender: Sender<Message>,
+        gossip_delay_ms: u64,
     ) -> Self {
         let wallet = Wallet::new();
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
@@ -77,6 +79,7 @@ impl Node {
             world_state_sender,
             node_type: NodeType::Honest,
             sybil_nodes: Vec::new(),
+            gossip_delay_ms,
         }
     }
 
@@ -87,6 +90,7 @@ impl Node {
         blockchain: Blockchain,
         wallet: Wallet,
         world_state_sender: Sender<Message>,
+        gossip_delay_ms: u64,
     ) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
         Node {
@@ -102,6 +106,7 @@ impl Node {
             world_state_sender,
             node_type: NodeType::Honest,
             sybil_nodes: Vec::new(),
+            gossip_delay_ms,
         }
     }
 
@@ -112,6 +117,7 @@ impl Node {
         blockchain: Blockchain,
         world_state_sender: Sender<Message>,
         fake_node_num: i32,
+        gossip_delay_ms: u64,
     ) -> Self {
         let mut sybil_nodes: Vec<Node> = Vec::new();
         for i in 0..fake_node_num {
@@ -121,6 +127,7 @@ impl Node {
                 slot,
                 blockchain.clone(),
                 world_state_sender.clone(),
+                gossip_delay_ms,
             );
             n.set_node_type(NodeType::Malicious);
             sybil_nodes.push(n);
@@ -140,6 +147,7 @@ impl Node {
             world_state_sender,
             node_type: NodeType::Malicious,
             sybil_nodes,
+            gossip_delay_ms,
         }
     }
 
@@ -254,7 +262,8 @@ impl Node {
                         transaction_paths_cache.retain(|x| !tx_hashs.contains(&x.transaction.hash));
                     }
                     //广播到其他邻居
-                    for neighbor_sender in self.neighbors.clone() {
+                    let gossip_delay_ms = self.gossip_delay_ms;
+                    for (idx, neighbor_sender) in self.neighbors.clone().iter().enumerate() {
                         if msg.from == neighbor_sender.address {
                             continue;
                         }
@@ -264,6 +273,7 @@ impl Node {
                             self.index, neighbor_sender.index
                         );
                         let self_address = self.get_address();
+                        let neighbor_sender = neighbor_sender.clone();
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -271,6 +281,10 @@ impl Node {
                                 .await
                                 .unwrap();
                         });
+                        // 延迟传播到下一个节点
+                        if gossip_delay_ms > 0 && idx < self.neighbors.len() - 1 {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(gossip_delay_ms)).await;
+                        }
                     }
                 }
                 MessageType::SendTransactionPaths => {
@@ -344,7 +358,9 @@ impl Node {
                                 transaction_paths.add_path(s.get_address(), wallet.clone());
                                 wallet = s.wallet.clone();
                             });
-                            for neighbor_sender in self.neighbors.clone() {
+                            let gossip_delay_ms = self.gossip_delay_ms;
+                            let neighbors_len = self.neighbors.len();
+                            for (idx, neighbor_sender) in self.neighbors.clone().iter().enumerate() {
                                 if msg.from == neighbor_sender.address {
                                     continue;
                                 }
@@ -359,6 +375,7 @@ impl Node {
                                     neighbor_sender.short_address_with_index()
                                 );
                                 let self_address = self.get_address();
+                                let neighbor_sender = neighbor_sender.clone();
                                 tokio::spawn(async move {
                                     neighbor_sender
                                         .sender
@@ -369,6 +386,10 @@ impl Node {
                                         .await
                                         .unwrap();
                                 });
+                                // 延迟传播到下一个节点
+                                if gossip_delay_ms > 0 && idx < neighbors_len - 1 {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(gossip_delay_ms)).await;
+                                }
                             }
                             continue;
                         }
@@ -376,7 +397,8 @@ impl Node {
                     }
 
                     //并广播到邻居
-                    for neighbor_sender in self.neighbors.clone() {
+                    let gossip_delay_ms = self.gossip_delay_ms;
+                    for (idx, neighbor_sender) in self.neighbors.clone().iter().enumerate() {
                         if msg.from == neighbor_sender.address {
                             continue;
                         }
@@ -391,6 +413,7 @@ impl Node {
                             neighbor_sender.short_address_with_index()
                         );
                         let self_address = self.get_address();
+                        let neighbor_sender = neighbor_sender.clone();
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -401,6 +424,10 @@ impl Node {
                                 .await
                                 .unwrap();
                         });
+                        // 延迟传播到下一个节点
+                        if gossip_delay_ms > 0 && idx < self.neighbors.len() - 1 {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(gossip_delay_ms)).await;
+                        }
                     }
                 }
 
@@ -433,9 +460,11 @@ impl Node {
                     );
 
                     //广播区块
-                    for neighbor_sender in self.neighbors.clone() {
+                    let gossip_delay_ms = self.gossip_delay_ms;
+                    for (idx, neighbor_sender) in self.neighbors.clone().iter().enumerate() {
                         let block = block.clone();
                         let self_address = self.get_address();
+                        let neighbor_sender = neighbor_sender.clone();
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -443,6 +472,10 @@ impl Node {
                                 .await
                                 .unwrap();
                         });
+                        // 延迟传播到下一个节点
+                        if gossip_delay_ms > 0 && idx < self.neighbors.len() - 1 {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(gossip_delay_ms)).await;
+                        }
                     }
                     //告诉下worldState
                     let world_state_sender = self.world_state_sender.clone();
@@ -487,7 +520,9 @@ impl Node {
                                 transaction_paths.add_path(s.get_address(), wallet.clone());
                                 wallet = s.wallet.clone();
                             });
-                            for neighbor_sender in self.neighbors.clone() {
+                            let gossip_delay_ms = self.gossip_delay_ms;
+                            let neighbors_len = self.neighbors.len();
+                            for (idx, neighbor_sender) in self.neighbors.clone().iter().enumerate() {
                                 if msg.from == neighbor_sender.address {
                                     continue;
                                 }
@@ -502,6 +537,7 @@ impl Node {
                                     neighbor_sender.short_address_with_index()
                                 );
                                 let self_address = self.get_address();
+                                let neighbor_sender = neighbor_sender.clone();
                                 tokio::spawn(async move {
                                     neighbor_sender
                                         .sender
@@ -512,13 +548,18 @@ impl Node {
                                         .await
                                         .unwrap();
                                 });
+                                // 延迟传播到下一个节点
+                                if gossip_delay_ms > 0 && idx < neighbors_len - 1 {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(gossip_delay_ms)).await;
+                                }
                             }
                             continue;
                         }
                         _ => {}
                     }
                     //广播交易
-                    for neighbor_sender in self.neighbors.clone() {
+                    let gossip_delay_ms = self.gossip_delay_ms;
+                    for (idx, neighbor_sender) in self.neighbors.clone().iter().enumerate() {
                         let mut new_trans_paths = transaction_paths.clone();
                         new_trans_paths
                             .add_path(neighbor_sender.address.clone(), self.wallet.clone());
@@ -530,6 +571,7 @@ impl Node {
                             neighbor_sender.short_address_with_index()
                         );
                         let self_address = self.get_address();
+                        let neighbor_sender = neighbor_sender.clone();
                         tokio::spawn(async move {
                             neighbor_sender
                                 .sender
@@ -540,6 +582,10 @@ impl Node {
                                 .await
                                 .unwrap();
                         });
+                        // 延迟传播到下一个节点
+                        if gossip_delay_ms > 0 && idx < self.neighbors.len() - 1 {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(gossip_delay_ms)).await;
+                        }
                     }
                 }
                 MessageType::SendRandaoSeed => {
@@ -696,7 +742,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut node = Node::new(0, 0, 0, blockchain, world_sender);
+        let mut node = Node::new(0, 0, 0, blockchain, world_sender, 0);
         let node_sender = node.sender.clone();
         let handle1 = tokio::spawn(async move {
             node.run().await;
@@ -734,6 +780,7 @@ mod tests {
             blockchain.clone(),
             wallet0.clone(),
             world_sender.clone(),
+            0,
         );
         let mut node1 = Node::new_with_wallet(
             1,
@@ -742,6 +789,7 @@ mod tests {
             blockchain.clone(),
             wallet1.clone(),
             world_sender.clone(),
+            0,
         );
         let mut node2 = Node::new_with_wallet(
             2,
@@ -750,6 +798,7 @@ mod tests {
             blockchain.clone(),
             wallet2.clone(),
             world_sender.clone(),
+            0,
         );
         let mut node3 = Node::new_with_wallet(
             3,
@@ -758,6 +807,7 @@ mod tests {
             blockchain.clone(),
             wallet3.clone(),
             world_sender.clone(),
+            0,
         );
 
         node0.neighbors.push(Neighbor::new(
