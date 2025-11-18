@@ -1,8 +1,8 @@
 use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
-use crate::consensus::pog::Pog;
-use crate::consensus::pos::Pos;
-use crate::consensus::{ConsensusType, RandaoSeed, Validator};
+use crate::consensus::pog::PogConsensus;
+use crate::consensus::pos::PosConsensus;
+use crate::consensus::{Consensus, ConsensusType, RandaoSeed, Validator};
 use crate::network::message::{Message, MessageType};
 use crate::tools::get_timestamp;
 use crate::{consensus, tools};
@@ -20,7 +20,6 @@ use tokio::{task, time};
 /// 全局状态，用于管理时隙、vdf投票，余额等等
 /// 也可以用于与所有的节点进行通信
 pub struct WorldState {
-    pub consensus_type: ConsensusType,
     pub current_slot: Arc<RwLock<SlotManager>>,
     // pub slots: Vec<SlotManager>,
     pub validators: Arc<RwLock<Vec<Validator>>>,
@@ -30,7 +29,7 @@ pub struct WorldState {
     // pub nodes_balance: HashMap<String, u64>,
     pub nodes_sender: HashMap<String, Sender<Message>>,
     pub blockchain: Arc<RwLock<Blockchain>>,
-    pub ntd: usize,
+    pub consensus: Box<dyn Consensus>,
 }
 
 static SLOT_DURATION: Duration = Duration::from_secs(5);
@@ -53,6 +52,10 @@ impl WorldState {
     ) -> (Self, Sender<Message>, Receiver<Message>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
+        let consensus: Box<dyn Consensus> = match consensus_type {
+            ConsensusType::POG => Box::new(PogConsensus::new(0)),
+            ConsensusType::POS => Box::new(PosConsensus::new()),
+        };
         (
             WorldState {
                 current_slot: Arc::new(RwLock::new(SlotManager {
@@ -64,10 +67,9 @@ impl WorldState {
                     start_timestamp: genesis_block.header.timestamp,
                 })),
                 validators: Arc::new(RwLock::new(vec![])),
-                consensus_type,
                 nodes_sender,
                 blockchain: Arc::new(RwLock::new(blockchain)),
-                ntd: 0,
+                consensus,
             },
             sender,
             receiver,
@@ -95,8 +97,11 @@ impl WorldState {
         }
         let current_slot = self.get_current_slot().await;
         info!(
-            "World State change slot to: epoch[{}] slot[{}] NTD[{}] seed{:?}",
-            current_slot.current_epoch, current_slot.current_slot, self.ntd, next_seed
+            "World State change slot to: epoch[{}] slot[{}] consensus[{}] seed{:?}",
+            current_slot.current_epoch,
+            current_slot.current_slot,
+            self.consensus.state_summary(),
+            next_seed
         );
 
         let nodes_sender: Vec<Sender<Message>> = self.nodes_sender.values().cloned().collect();
@@ -123,13 +128,17 @@ impl WorldState {
 
         //获得出块节点
         let bc = self.blockchain.read().await.clone();
-        let miner_validator = match self.consensus_type {
-            ConsensusType::POS => Pos::select(validators.clone(), next_seed.clone(), bc).unwrap(),
-            ConsensusType::POG => {
-                let k = self.ntd * 2;
-                Pog::select(validators.clone(), next_seed.clone(), bc, self.ntd, k).unwrap()
-            }
-        };
+        let miner_validator =
+            match self
+                .consensus
+                .select_proposer(&validators, next_seed.clone(), &bc)
+            {
+                Ok(miner) => miner,
+                Err(e) => {
+                    warn!("World State error: select proposer failed: {}", e);
+                    return;
+                }
+            };
 
         //这里简化成通知miner出块，实际上应该是每个节点自己算
         match self.nodes_sender.get(&miner_validator.address) {
@@ -152,19 +161,9 @@ impl WorldState {
     pub async fn next_epoch(&mut self) {
         let current_slot = self.current_slot.read().await.clone();
         let _current_epoch = current_slot.current_epoch;
-        //更新NTD
+        //更新epoch中调用consensus的on_epoch_end
         let blocks = self.blockchain.read().await.get_last_epoch_block();
-        let paths: Vec<Vec<String>> = blocks.iter().flat_map(|b| b.get_all_paths()).collect();
-        if !paths.is_empty() {
-            let p_ave =
-                //出块节点不算，要减一
-                paths.iter().map(|v| v.len() - 1).sum::<usize>() as f64 / paths.len() as f64;
-            if self.ntd > p_ave.ceil() as usize {
-                self.ntd = self.ntd - 1;
-            } else if self.ntd < p_ave.ceil() as usize {
-                self.ntd = self.ntd + 1;
-            }
-        }
+        self.consensus.on_epoch_end(&blocks);
 
         let validators = self.validators.read().await.clone();
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);

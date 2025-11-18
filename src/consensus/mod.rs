@@ -1,3 +1,5 @@
+use crate::blockchain::block::Block;
+use crate::blockchain::Blockchain;
 use crate::network::node::Node;
 use crate::tools;
 use crate::wallet::Wallet;
@@ -28,6 +30,21 @@ impl Display for ConsensusType {
                 write!(f, "pog")
             }
         }
+    }
+}
+
+pub trait Consensus: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn select_proposer(
+        &mut self,
+        validators: &[Validator],
+        combines_seed: [u8; 32],
+        blockchain: &Blockchain,
+    ) -> Result<Validator, ValidatorError>;
+    fn on_epoch_end(&mut self, blocks: &[Block]);
+    fn apply_block_feedback(&mut self, _block: &Block) {}
+    fn state_summary(&self) -> String {
+        String::new()
     }
 }
 

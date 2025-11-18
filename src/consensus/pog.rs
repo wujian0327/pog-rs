@@ -1,25 +1,34 @@
+use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
-use crate::consensus::ConsensusType::POG;
-use crate::consensus::ValidatorError::NOValidatorError;
-use crate::consensus::{Validator, ValidatorError};
+use crate::consensus::{Consensus, Validator, ValidatorError};
 use log::{debug, info, trace};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{HashMap, HashSet};
 
-pub struct Pog;
+pub struct PogConsensus {
+    ntd: usize,
+}
 
-impl Pog {
-    pub fn select(
+impl PogConsensus {
+    pub fn new(initial_ntd: usize) -> Self {
+        PogConsensus { ntd: initial_ntd }
+    }
+
+    fn k(&self) -> usize {
+        self.ntd * 2
+    }
+
+    fn select_internal(
+        &self,
         validators: Vec<Validator>,
         combines_seeds: [u8; 32],
         blockchain: Blockchain,
-        ntd: usize,
-        k: usize,
     ) -> Result<Validator, ValidatorError> {
+        let k = self.k();
         let last_block = blockchain.get_last_block();
         let paths = last_block.get_all_paths();
-        let c_n = Pog::cal_network_contribution(paths, ntd, validators.clone());
+        let c_n = self.cal_network_contribution(paths, validators.clone());
         info!(
             "Calculate network contribution: {}",
             serde_json::to_string(&c_n)?
@@ -28,7 +37,7 @@ impl Pog {
             .iter()
             .map(|x| (x.address.to_string(), x.stake))
             .collect();
-        let s_virtual_map = Pog::cal_virtual_stake(s_real_map, c_n, k);
+        let s_virtual_map = self.cal_virtual_stake(s_real_map, c_n);
         info!(
             "Calculate virtual stake: {}",
             serde_json::to_string(&s_virtual_map)?
@@ -65,12 +74,12 @@ impl Pog {
             }
         }
 
-        Err(NOValidatorError)
+        Err(ValidatorError::NOValidatorError)
     }
 
-    pub fn cal_network_contribution(
+    fn cal_network_contribution(
+        &self,
         paths: Vec<Vec<String>>,
-        ntd: usize,
         validators: Vec<Validator>,
     ) -> HashMap<String, f64> {
         let mut c_n: HashMap<String, f64> = HashMap::new();
@@ -81,10 +90,10 @@ impl Pog {
             }
             //去掉miner
             let p = p[..p.len() - 1].to_vec();
-            let c_p = if p.len() <= ntd {
+            let c_p = if p.len() <= self.ntd {
                 1.0
             } else {
-                1.0 / (1 + p.len() - ntd) as f64
+                1.0 / (1 + p.len() - self.ntd) as f64
             };
             let sum_s = p
                 .iter()
@@ -98,17 +107,19 @@ impl Pog {
         c_n
     }
 
-    pub fn get_real_stake(n: String, validators: Vec<Validator>) -> f64 {
+    fn get_real_stake(n: String, validators: Vec<Validator>) -> f64 {
         if let Some(v) = validators.iter().find(|x| x.address == n) {
             return v.stake;
         }
         0f64
     }
+
     fn cal_virtual_stake(
+        &self,
         real_stake_map: HashMap<String, f64>,
         c_n: HashMap<String, f64>,
-        k: usize,
     ) -> HashMap<String, f64> {
+        let k = self.k();
         let c_sum = c_n.iter().map(|(_n, v)| v).sum::<f64>();
         let mut c_mao = HashMap::new();
         c_n.iter().for_each(|(k, v)| {
@@ -146,11 +157,54 @@ impl Pog {
     }
 }
 
+impl Consensus for PogConsensus {
+    fn name(&self) -> &'static str {
+        "POG"
+    }
+
+    fn select_proposer(
+        &mut self,
+        validators: &[Validator],
+        combines_seed: [u8; 32],
+        blockchain: &Blockchain,
+    ) -> Result<Validator, ValidatorError> {
+        self.select_internal(validators.to_vec(), combines_seed, blockchain.clone())
+    }
+
+    fn on_epoch_end(&mut self, blocks: &[Block]) {
+        let paths: Vec<Vec<String>> = blocks.iter().flat_map(|b| b.get_all_paths()).collect();
+        self.adjust_ntd(&paths);
+    }
+
+    fn state_summary(&self) -> String {
+        format!("pog(ntd={})", self.ntd)
+    }
+}
+
+impl PogConsensus {
+    fn adjust_ntd(&mut self, paths: &[Vec<String>]) {
+        if paths.is_empty() {
+            return;
+        }
+        let p_ave = paths
+            .iter()
+            .map(|path| path.len().saturating_sub(1))
+            .sum::<usize>() as f64
+            / paths.len() as f64;
+        let target = p_ave.ceil() as usize;
+        if self.ntd > target {
+            self.ntd -= 1;
+        } else if self.ntd < target {
+            self.ntd += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
     use crate::blockchain::transaction::Transaction;
-    use crate::consensus::pog::Pog;
+    use crate::consensus::pog::PogConsensus;
     use crate::consensus::Validator;
     use crate::wallet::Wallet;
     use log::info;
@@ -183,14 +237,15 @@ mod tests {
         let v3 = Validator::new(wallet3.address, 3f64);
         let miner = Validator::new(miner.address, 4f64);
         let validators = vec![v1, v2, v3, miner];
-        let c_n = Pog::cal_network_contribution(paths, 3, validators.clone());
+        let pog = PogConsensus::new(3);
+        let c_n = pog.cal_network_contribution(paths, validators.clone());
         info!("c_n: {:#?}", c_n);
 
         let s_real_map: HashMap<String, f64> = validators
             .iter()
             .map(|x| (x.address.to_string(), x.stake))
             .collect();
-        let s_v = Pog::cal_virtual_stake(s_real_map, c_n, 4);
+        let s_v = pog.cal_virtual_stake(s_real_map, c_n);
         info!("s_v: {:#?}", s_v);
     }
 }
