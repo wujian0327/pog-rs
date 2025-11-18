@@ -20,11 +20,6 @@ use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tokio::{task, time};
 
-static SLOT_DURATION: Duration = Duration::from_secs(5);
-static SLOT_PER_EPOCH: u64 = 5;
-static POW_INIT_DIFFICULTY: usize = 20; //only pow
-static POW_MAX_THREADS: usize = 8; // only pow
-
 /// 全局状态，用于管理时隙、vdf投票，余额等等
 /// 也可以用于与所有的节点进行通信
 pub struct WorldState {
@@ -40,6 +35,8 @@ pub struct WorldState {
     pub consensus: Box<dyn Consensus>,
     metrics_slots_file: Option<std::fs::File>,
     metrics_epochs_file: Option<std::fs::File>,
+    slot_duration: Duration,
+    slot_per_epoch: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -57,16 +54,21 @@ impl WorldState {
         genesis_block: Block,
         consensus_type: ConsensusType,
         blockchain: Blockchain,
+        slot_duration_secs: u64,
+        slot_per_epoch: u64,
+        pow_difficulty: usize,
+        pow_max_threads: usize,
     ) -> (Self, Sender<Message>, Receiver<Message>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
+        let slot_duration = Duration::from_secs(slot_duration_secs);
         let consensus: Box<dyn Consensus> = match consensus_type {
             ConsensusType::POG => Box::new(PogConsensus::new(0)),
             ConsensusType::POS => Box::new(PosConsensus::new()),
             ConsensusType::POW => Box::new(PowConsensus::new(
-                POW_INIT_DIFFICULTY,
-                POW_MAX_THREADS,
-                SLOT_DURATION,
+                pow_difficulty,
+                pow_max_threads,
+                slot_duration,
             )),
         };
         // Initialize metrics files
@@ -86,7 +88,7 @@ impl WorldState {
             WorldState {
                 current_slot: Arc::new(RwLock::new(SlotManager {
                     randao_seeds: vec![],
-                    slot_duration: SLOT_DURATION,
+                    slot_duration,
                     current_epoch: 0,
                     current_slot: 0,
                     next_seed: [0; 32],
@@ -98,6 +100,8 @@ impl WorldState {
                 consensus,
                 metrics_slots_file,
                 metrics_epochs_file,
+                slot_duration,
+                slot_per_epoch,
             },
             sender,
             receiver,
@@ -110,13 +114,13 @@ impl WorldState {
         let validators = self.validators.read().await.clone();
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
 
-        if current_slot.current_slot >= SLOT_PER_EPOCH - 1 {
+        if current_slot.current_slot >= self.slot_per_epoch - 1 {
             //更新epoch
             self.next_epoch().await;
         } else {
             self.current_slot = Arc::new(RwLock::new(SlotManager {
                 randao_seeds: vec![],
-                slot_duration: SLOT_DURATION,
+                slot_duration: self.slot_duration,
                 current_epoch: current_slot.current_epoch,
                 current_slot: current_slot.current_slot + 1,
                 next_seed,
@@ -200,7 +204,7 @@ impl WorldState {
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
         self.current_slot = Arc::new(RwLock::new(SlotManager {
             randao_seeds: vec![],
-            slot_duration: SLOT_DURATION,
+            slot_duration: self.slot_duration,
             current_epoch: current_slot.current_epoch + 1,
             current_slot: 0,
             next_seed,
@@ -300,7 +304,7 @@ impl WorldState {
         }
 
         let throughput = if block_count > 0 {
-            total_tx_count as f64 / (block_count as f64 * SLOT_DURATION.as_secs_f64())
+            total_tx_count as f64 / (block_count as f64 * self.slot_duration.as_secs_f64())
         } else {
             0.0
         };
@@ -496,6 +500,10 @@ mod tests {
             blockchain.get_last_block().clone(),
             ConsensusType::POS,
             Blockchain::new(Block::gen_genesis_block()),
+            5,
+            5,
+            20,
+            8,
         );
         tokio::spawn(async move {
             world.run(world_receiver).await;
@@ -515,6 +523,10 @@ mod tests {
             blockchain.get_last_block().clone(),
             ConsensusType::POS,
             Blockchain::new(Block::gen_genesis_block()),
+            5,
+            5,
+            20,
+            8,
         );
 
         let validators = world.validators.clone();

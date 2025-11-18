@@ -6,12 +6,12 @@ use crate::consensus::{RandaoSeed, Validator};
 use crate::network::message::{Message, MessageType};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rand::Rng;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 ///通过Tokio的mpsc通道与其他节点交互
 ///负责出块、发送交易、发送seed
@@ -28,6 +28,9 @@ pub struct Node {
     pub transaction_paths_cache: Arc<RwLock<Vec<TransactionPaths>>>,
     pub node_type: NodeType,
     pub sybil_nodes: Vec<Node>,
+    pub is_online: bool,
+    pub offline_until_epoch: Option<u64>,
+    pub offline_probability: f64,
 }
 
 #[derive(Clone)]
@@ -35,6 +38,7 @@ pub enum NodeType {
     Honest,
     Selfish,
     Malicious,
+    Unstable, // 会随机下线的节点
 }
 
 impl Display for NodeType {
@@ -43,6 +47,7 @@ impl Display for NodeType {
             NodeType::Honest => write!(f, "Honest"),
             NodeType::Selfish => write!(f, "Selfish"),
             NodeType::Malicious => write!(f, "Malicious"),
+            NodeType::Unstable => write!(f, "Unstable"),
         }
     }
 }
@@ -77,6 +82,9 @@ impl Node {
             world_state_sender,
             node_type: NodeType::Honest,
             sybil_nodes: Vec::new(),
+            is_online: true,
+            offline_until_epoch: None,
+            offline_probability: 0.1,
         }
     }
 
@@ -102,6 +110,9 @@ impl Node {
             world_state_sender,
             node_type: NodeType::Honest,
             sybil_nodes: Vec::new(),
+            is_online: true,
+            offline_until_epoch: None,
+            offline_probability: 0.1,
         }
     }
 
@@ -140,11 +151,18 @@ impl Node {
             world_state_sender,
             node_type: NodeType::Malicious,
             sybil_nodes,
+            is_online: true,
+            offline_until_epoch: None,
+            offline_probability: 0.1,
         }
     }
 
     pub fn set_node_type(&mut self, node_type: NodeType) {
         self.node_type = node_type;
+    }
+
+    pub fn set_offline_probability(&mut self, probability: f64) {
+        self.offline_probability = probability.clamp(0.0, 1.0);
     }
 
     pub async fn generate_block(&self, epoch: u64, slot: u64) -> Result<Block, BlockError> {
@@ -212,6 +230,12 @@ impl Node {
 
     pub async fn run(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
+            // 检查节点是否离线
+            if !self.is_online {
+                debug!("Node[{}] is offline, skipping message", self.index);
+                continue;
+            }
+
             match msg.msg_type {
                 MessageType::SendBlock => {
                     let block = match Block::from_json(msg.data) {
@@ -581,6 +605,15 @@ impl Node {
                                 .await
                                 .unwrap();
                         }
+                        NodeType::Unstable => {
+                            self.world_state_sender
+                                .send(Message::new_receive_become_validator_msg(Validator::new(
+                                    self.wallet.address.clone(),
+                                    default_state,
+                                )))
+                                .await
+                                .unwrap();
+                        }
                         NodeType::Malicious => {
                             let honest_node_num =
                                 usize::from_le_bytes(msg.data.try_into().unwrap());
@@ -623,8 +656,42 @@ impl Node {
                         }
                     };
                     debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);
+
+                    let old_epoch = self.epoch;
                     self.slot = slot.current_slot;
                     self.epoch = slot.current_epoch;
+
+                    // Unstable节点的离线逻辑
+                    if matches!(self.node_type, NodeType::Unstable) {
+                        // 检查是否应该恢复在线
+                        if let Some(offline_until) = self.offline_until_epoch {
+                            if self.epoch >= offline_until {
+                                self.is_online = true;
+                                self.offline_until_epoch = None;
+                                info!(
+                                    "Node[{}] is back online at epoch {}",
+                                    self.index, self.epoch
+                                );
+                            }
+                        }
+
+                        // 如果epoch发生变化且当前在线，随机决定是否下线
+                        if self.is_online && self.epoch != old_epoch {
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+                            // 根据配置的概率下线一个epoch
+                            if rng.gen_bool(self.offline_probability) {
+                                self.is_online = false;
+                                self.offline_until_epoch = Some(self.epoch + 1);
+                                warn!(
+                                    "Node[{}] goes offline at epoch {} until epoch {}",
+                                    self.index,
+                                    self.epoch,
+                                    self.epoch + 1
+                                );
+                            }
+                        }
+                    }
                 }
                 MessageType::PrintBlockchain => {
                     debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);

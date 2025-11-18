@@ -24,7 +24,13 @@ pub async fn start_network(
     node_num: u32,
     malicious_node_num: u32,
     fake_node_num: u32,
+    unstable_node_num: u32,
+    offline_probability: f64,
     trans_num_per_second: u32,
+    slot_duration: u64,
+    slot_per_epoch: u64,
+    pow_difficulty: usize,
+    pow_max_threads: usize,
     consensus: ConsensusType,
     topology: TopologyType,
 ) {
@@ -36,18 +42,28 @@ pub async fn start_network(
     info!("Generate genesis block");
 
     //2. world state
-    let (mut world, world_sender, world_receiver) =
-        WorldState::new(genesis_block, consensus, bc.clone());
+    let (mut world, world_sender, world_receiver) = WorldState::new(
+        genesis_block,
+        consensus,
+        bc.clone(),
+        slot_duration,
+        slot_per_epoch,
+        pow_difficulty,
+        pow_max_threads,
+    );
     info!("Generate world state");
 
     //3. nodes
-    let mut node_map: HashMap<String, Node> = (0..node_num + malicious_node_num)
+    let total_nodes = node_num + malicious_node_num + unstable_node_num;
+    let mut node_map: HashMap<String, Node> = (0..total_nodes)
         .map(|i| {
             if i < node_num {
+                // Honest nodes
                 let node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
                 node.simple_print();
                 (node.get_address(), node)
-            } else {
+            } else if i < node_num + malicious_node_num {
+                // Malicious nodes with sybil
                 let node = Node::new_with_sybil_nodes(
                     i,
                     0,
@@ -56,6 +72,13 @@ pub async fn start_network(
                     world_sender.clone(),
                     fake_node_num as i32,
                 );
+                node.simple_print();
+                (node.get_address(), node)
+            } else {
+                // Unstable nodes
+                let mut node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                node.set_node_type(NodeType::Unstable);
+                node.set_offline_probability(offline_probability);
                 node.simple_print();
                 (node.get_address(), node)
             }
@@ -72,7 +95,10 @@ pub async fn start_network(
         .map(|(address, node)| (address.clone(), node.index))
         .collect();
     let nodes_address: Vec<String> = node_map.keys().cloned().collect();
-    info!("Generate {} nodes", node_num + malicious_node_num);
+    info!(
+        "Generate {} honest nodes, {} malicious nodes, {} unstable nodes",
+        node_num, malicious_node_num, unstable_node_num
+    );
 
     //4. gen the network graph
     let graph = match topology {

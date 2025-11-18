@@ -29,7 +29,7 @@ impl PogConsensus {
         let last_block = blockchain.get_last_block();
         let paths = last_block.get_all_paths();
         let c_n = self.cal_network_contribution(paths, validators.clone());
-        info!(
+        debug!(
             "Calculate network contribution: {}",
             serde_json::to_string(&c_n)?
         );
@@ -38,7 +38,7 @@ impl PogConsensus {
             .map(|x| (x.address.to_string(), x.stake))
             .collect();
         let s_virtual_map = self.cal_virtual_stake(s_real_map, c_n);
-        info!(
+        debug!(
             "Calculate virtual stake: {}",
             serde_json::to_string(&s_virtual_map)?
         );

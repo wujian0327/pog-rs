@@ -24,9 +24,33 @@ struct Args {
     #[clap(short, long, default_value = "0")]
     fake_node_num: u32,
 
+    /// 不稳定节点个数(Unstable node num)
+    #[clap(short, long, default_value = "0")]
+    unstable_node_num: u32,
+
+    /// 不稳定节点下线概率 (Unstable node offline probability)
+    #[clap(long, default_value = "0.5")]
+    offline_probability: f64,
+
     /// 每秒交易个数（泊松分布）(Number of transactions per second)
     #[clap(short, long, default_value = "10")]
     trans_num: u32,
+
+    /// 时隙持续时间（秒）(Slot duration in seconds)
+    #[clap(long, default_value = "5")]
+    slot_duration: u64,
+
+    /// 每个epoch的时隙数量 (Slots per epoch)
+    #[clap(long, default_value = "5")]
+    slot_per_epoch: u64,
+
+    /// PoW初始难度 (PoW initial difficulty)
+    #[clap(long, default_value = "20")]
+    pow_difficulty: usize,
+
+    /// PoW最大线程数 (PoW max threads)
+    #[clap(long, default_value = "8")]
+    pow_max_threads: usize,
 
     /// 共识算法类型 (Consensus algorithm type)
     #[arg(short, long, default_value_t = ConsensusType::POG)]
@@ -49,7 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.node_num,
         args.malicious_node_num,
         args.fake_node_num,
+        args.unstable_node_num,
+        args.offline_probability,
         args.trans_num,
+        args.slot_duration,
+        args.slot_per_epoch,
+        args.pow_difficulty,
+        args.pow_max_threads,
         args.consensus,
         args.topology,
     )
