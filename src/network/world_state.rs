@@ -185,7 +185,7 @@ impl WorldState {
                     .unwrap();
             }
             None => {
-                warn!("World State error: failed to find miner");
+                error!("World State error: failed to find miner");
             }
         }
 

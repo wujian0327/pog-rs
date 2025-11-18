@@ -77,7 +77,7 @@ impl Blockchain {
     pub fn get_last_hash(&self) -> String {
         self.blocks.last().unwrap().header.hash.clone()
     }
-    pub fn get_lash_index(&self) -> u64 {
+    pub fn get_last_index(&self) -> u64 {
         self.get_last_block().header.index
     }
 
@@ -128,7 +128,7 @@ impl Blockchain {
 
     pub async fn write_to_file_last_block_simple(&self) {
         let path = "blockchain.txt";
-        if self.get_lash_index() == 0 {
+        if self.get_last_index() == 0 {
             let _ = tokio::fs::remove_file(path).await;
         }
         let mut file = match tokio::fs::OpenOptions::new()
@@ -223,7 +223,7 @@ mod tests {
             )],
         );
         let block = Block::new(
-            blockchain.get_lash_index() + 1,
+            blockchain.get_last_index() + 1,
             0,
             1,
             blockchain.get_last_hash(),

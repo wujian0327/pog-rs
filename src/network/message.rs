@@ -93,6 +93,23 @@ impl Message {
             from: "".to_string(),
         }
     }
+
+    pub fn new_request_block_sync_msg(last_block_index: u64, from: String) -> Message {
+        Message {
+            msg_type: MessageType::RequestBlockSync,
+            data: last_block_index.to_le_bytes().to_vec(),
+            from: from,
+        }
+    }
+
+    pub fn new_response_block_sync_msg(blocks: Vec<Block>, from: String) -> Message {
+        let blocks_json = serde_json::to_string(&blocks).unwrap_or_default();
+        Message {
+            msg_type: MessageType::ResponseBlockSync,
+            data: blocks_json.into_bytes(),
+            from,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -107,6 +124,8 @@ pub enum MessageType {
     ReceiveBecomeValidator,
     UpdateSlot,
     PrintBlockchain,
+    RequestBlockSync,
+    ResponseBlockSync,
 }
 
 impl Display for MessageType {
@@ -144,6 +163,12 @@ impl Display for MessageType {
 
             MessageType::PrintBlockchain => {
                 write!(f, "PrintBlockchain")
+            }
+            MessageType::RequestBlockSync => {
+                write!(f, "RequestBlockSync")
+            }
+            MessageType::ResponseBlockSync => {
+                write!(f, "ResponseBlockSync")
             }
         }
     }
