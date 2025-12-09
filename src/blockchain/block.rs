@@ -106,7 +106,7 @@ impl Block {
             error!("{}", BlockError::InvalidBlock);
             return false;
         }
-        for (i, transaction) in self.body.transactions.iter().enumerate() {
+        for (_i, transaction) in self.body.transactions.iter().enumerate() {
             if !transaction.verify() {
                 error!("{}", BlockError::InvalidBlockTransactions);
                 return false;
@@ -173,7 +173,7 @@ impl Block {
     pub fn count_all_paths(&self) -> usize {
         let mut counts = 0;
         for x in self.body.paths.clone() {
-            for y in x.paths {
+            for _y in x.paths {
                 counts += 1;
             }
         }

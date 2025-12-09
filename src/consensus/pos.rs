@@ -59,7 +59,7 @@ impl Consensus for PosConsensus {
         &self,
         block: &Block,
         validators: &mut [Validator],
-        nodes_index: HashMap<String, u32>,
+        _nodes_index: HashMap<String, u32>,
     ) {
         // PoS: 固定奖励 + 交易费用
         if let Some(validator) = validators

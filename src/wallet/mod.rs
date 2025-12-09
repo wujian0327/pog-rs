@@ -63,6 +63,7 @@ impl Wallet {
         }
     }
 
+    #[allow(dead_code)]
     fn from_secret_key_string(mut secret_key: String) -> Result<Wallet, WalletError> {
         if secret_key.len() == 66 {
             secret_key = secret_key[2..].to_string();
@@ -162,6 +163,7 @@ impl Wallet {
         }
     }
 
+    #[allow(dead_code)]
     fn verify_bls(&self, msg: Vec<u8>, signature: String) -> bool {
         let signature = match Wallet::bls_signature_from_string(signature) {
             Ok(signature) => signature,
@@ -247,6 +249,7 @@ impl Wallet {
         )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn print(&self) {
         info!("Secret Key: 0x{}", encode(self.secret_key.secret_bytes()));
         let public_key_bytes = &self.public_key.serialize_uncompressed()[1..];

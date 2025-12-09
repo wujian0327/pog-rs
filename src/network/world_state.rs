@@ -449,7 +449,7 @@ impl WorldState {
                             };
 
                             {
-                                let mut shared_self = shared_self.write().await;
+                                let shared_self = shared_self.write().await;
                                 if let Err(e) = shared_self
                                     .blockchain
                                     .write()

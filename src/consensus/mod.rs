@@ -3,7 +3,7 @@ use crate::blockchain::Blockchain;
 use crate::network::node::Node;
 use crate::tools;
 use crate::wallet::Wallet;
-use clap::{Subcommand, ValueEnum};
+use clap::ValueEnum;
 use log::error;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -65,7 +65,7 @@ pub trait Consensus: Send + Sync {
         &self,
         _block: &Block,
         _validators: &mut [Validator],
-        nodes_index: HashMap<String, u32>,
+        _nodes_index: HashMap<String, u32>,
     ) {
     }
 }

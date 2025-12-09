@@ -1,7 +1,7 @@
 use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
-use log::{info, trace, warn};
+use log::{info, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -58,6 +58,7 @@ impl PowConsensus {
     }
 
     /// 进行 PoW 计算，返回满足难度要求的 nonce 和对应的 hash
+    #[allow(dead_code)]
     fn mine_pow(data: &[u8], difficulty: usize, max_attempts: u64) -> Option<(u64, Vec<u8>)> {
         for nonce in 0..max_attempts {
             let mut hasher = Sha256::new();
@@ -229,7 +230,7 @@ impl Consensus for PowConsensus {
         &self,
         block: &Block,
         validators: &mut [Validator],
-        nodes_index: HashMap<String, u32>,
+        _nodes_index: HashMap<String, u32>,
     ) {
         // PoW: 固定奖励 + 交易费用
         if let Some(validator) = validators

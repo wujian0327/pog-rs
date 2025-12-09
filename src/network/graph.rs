@@ -1,4 +1,3 @@
-use crate::tools::short_hash;
 use clap::ValueEnum;
 use petgraph::graph::NodeIndex;
 use petgraph::prelude::EdgeRef;
