@@ -234,6 +234,7 @@ impl WorldState {
         // Calculate stake concentration from stakes
         let stake_values: Vec<f64> = validators.iter().map(|v| v.stake).collect();
         let stake_concentration = calculate_stake_concentration(&stake_values);
+        let gini_coefficient = metrics::calculate_gini(&stake_values);
 
         // Get consensus state summary
         let consensus_state = self.consensus.state_summary();
@@ -249,6 +250,7 @@ impl WorldState {
             tx_count,
             path_stats: path_stats,
             stake_concentration,
+            gini_coefficient,
             consensus_type: self.consensus.name().to_string(),
             consensus_state,
         };
@@ -313,6 +315,7 @@ impl WorldState {
 
         let stake_values: Vec<f64> = validators.iter().map(|v| v.stake).collect();
         let stake_concentration = calculate_stake_concentration(&stake_values);
+        let gini_coefficient = metrics::calculate_gini(&stake_values);
 
         // Get consensus state
         let consensus_state = self.consensus.state_summary();
@@ -328,6 +331,7 @@ impl WorldState {
             miner_distribution,
             path_stats: path_stats,
             stake_concentration,
+            gini_coefficient,
             consensus_type: self.consensus.name().to_string(),
             consensus_state,
             pog_state: None,
@@ -569,12 +573,21 @@ mod tests {
             node1.run().await;
         });
         //become validator
+
+        let nodes_address = vec![node0_wallet.address.clone(), node1_wallet.address.clone()];
+        let mut stake_map: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        for (i, address) in nodes_address.iter().enumerate() {
+            stake_map.insert(address.clone(), 1.0);
+        }
+        let stake_json = serde_json::to_vec(&stake_map).unwrap_or_default();
+
         node0_sender
-            .send(Message::new_become_validator_msg(2))
+            .send(Message::new_become_validator_msg(stake_json.clone()))
             .await
             .unwrap();
         node1_sender
-            .send(Message::new_become_validator_msg(2))
+            .send(Message::new_become_validator_msg(stake_json))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;

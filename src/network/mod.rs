@@ -6,7 +6,7 @@ use crate::network::message::Message;
 use crate::network::node::{Neighbor, Node, NodeType};
 use crate::network::world_state::WorldState;
 use futures::future::join_all;
-use log::info;
+use log::{debug, info};
 use rand::prelude::*;
 use rand::thread_rng;
 use rand_distr::{Distribution, Poisson};
@@ -33,6 +33,7 @@ pub async fn start_network(
     pow_max_threads: usize,
     consensus: ConsensusType,
     topology: TopologyType,
+    gini: f64,
 ) {
     info!("Consensus Type is {}", consensus);
 
@@ -178,12 +179,30 @@ pub async fn start_network(
     }
 
     //become validator
+    // Generate stake distribution based on gini
+    let stake_values = if gini > 0.0 {
+        crate::metrics::generate_stake_by_gini(total_nodes, gini)
+    } else {
+        // Default: equal stakes
+        vec![1.0; total_nodes as usize]
+    };
+
+    // Create address -> stake mapping
+    let mut stake_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for (i, address) in nodes_address.iter().enumerate() {
+        if i < stake_values.len() {
+            stake_map.insert(address.clone(), stake_values[i]);
+        }
+    }
+
+    // Convert to JSON and send to all nodes
+    let stake_json = serde_json::to_vec(&stake_map).unwrap_or_default();
+
     for (k, sender) in nodes_sender.clone() {
-        info!("Node[{}] become validator", nodes_index.get(&k).unwrap());
-        sender
-            .send(Message::new_become_validator_msg(node_num as usize))
-            .await
-            .unwrap();
+        debug!("Node[{}] become validator", nodes_index.get(&k).unwrap());
+        // Create modified become_validator message with stake data
+        let msg = Message::new_become_validator_msg(stake_json.clone());
+        sender.send(msg).await.unwrap();
     }
 
     let mut tg = TransactionGenerator::new(

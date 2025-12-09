@@ -62,10 +62,10 @@ impl Message {
         }
     }
 
-    pub fn new_become_validator_msg(node_num: usize) -> Message {
+    pub fn new_become_validator_msg(stake_json: Vec<u8>) -> Message {
         Message {
             msg_type: MessageType::BecomeValidator,
-            data: node_num.to_le_bytes().to_vec(),
+            data: stake_json,
             from: "".to_string(),
         }
     }

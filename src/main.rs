@@ -59,6 +59,11 @@ struct Args {
     ///拓扑结构 (Topology)
     #[arg(long, default_value_t = TopologyType::BA)]
     topology: TopologyType,
+
+    /// 初始Gini指数 (Initial Gini coefficient for stake distribution)
+    /// 0 = 完全平等，1 = 完全不平等
+    #[clap(short, long, default_value = "0.0")]
+    gini: f64,
 }
 
 #[tokio::main]
@@ -82,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.pow_max_threads,
         args.consensus,
         args.topology,
+        args.gini,
     )
     .await;
     Ok(())

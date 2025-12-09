@@ -250,7 +250,7 @@ mod tests {
         let work_10 = PowConsensus::compute_work_amount(10);
 
         // 难度增加 9，工作量应该增加 2^9
-        assert!(work_10 > work_1 * 512.0);
+        assert!(work_10 >= work_1 * 512.0);
     }
 
     #[test]

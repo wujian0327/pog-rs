@@ -651,13 +651,29 @@ impl Node {
                 }
                 MessageType::BecomeValidator => {
                     debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);
-                    let default_state = 32f64;
+                    let default_state = 1f64;
+
+                    // Try to parse stake_map from JSON data
+                    let stake_map: std::collections::HashMap<String, f64> =
+                        String::from_utf8(msg.data.clone())
+                            .ok()
+                            .and_then(|json| serde_json::from_str(&json).ok())
+                            .unwrap_or_default();
+
+                    let my_stake = stake_map
+                        .get(&self.wallet.address)
+                        .copied()
+                        .unwrap_or(default_state);
+                    info!(
+                        "Node[{}] with address[{}] becomes validator with stake {}",
+                        self.index, self.wallet.address, my_stake
+                    );
                     match self.node_type {
                         NodeType::Honest => {
                             self.world_state_sender
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
-                                    default_state,
+                                    my_stake,
                                 )))
                                 .await
                                 .unwrap();
@@ -666,7 +682,7 @@ impl Node {
                             self.world_state_sender
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
-                                    default_state,
+                                    my_stake,
                                 )))
                                 .await
                                 .unwrap();
@@ -675,24 +691,16 @@ impl Node {
                             self.world_state_sender
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
-                                    default_state,
+                                    my_stake,
                                 )))
                                 .await
                                 .unwrap();
                         }
                         NodeType::Malicious => {
-                            let honest_node_num =
-                                usize::from_le_bytes(msg.data.try_into().unwrap());
-                            // 女巫攻击需要平分自己的stake
-                            // 测试sybil 占stake比例不同，这里需要手动分配比例,默认0.1
-                            // (x + good_node * 32)*0.1 = x ->x = good_node * 32 /9
-                            // (x + good_node * 32)*0.2 = x ->x = good_node * 32 /4
-                            // (x + good_node * 32)*0.3 = x ->x = good_node * 32 / (10 / 3 - 1)
-                            let sybil_stake =
-                                default_state * honest_node_num as f64 / (10.0 / 5.0 - 1.0);
-                            info!("Sybil node[{}] has {} stake", self.index, sybil_stake);
+                            // For malicious nodes with sybil, divide stake among all sybil identities
                             let sybil_num = self.sybil_nodes.len();
-                            let stake = sybil_stake / (sybil_num + 1) as f64;
+                            let stake = my_stake / (sybil_num + 1) as f64;
+
                             self.world_state_sender
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),

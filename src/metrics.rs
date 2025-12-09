@@ -13,6 +13,7 @@ pub struct SlotMetrics {
     pub tx_count: usize,
     pub path_stats: PathStats,
     pub stake_concentration: f64, // Herfindahl index
+    pub gini_coefficient: f64,    // Gini系数，衡量权益分布不平等程度
     pub consensus_type: String,
     pub consensus_state: String, // e.g., "pog(ntd=3)", "pos"
 }
@@ -37,6 +38,7 @@ pub struct EpochMetrics {
     pub miner_distribution: HashMap<String, usize>,
     pub path_stats: PathStats,
     pub stake_concentration: f64,
+    pub gini_coefficient: f64, // Gini系数，衡量权益分布不平等程度
     pub consensus_type: String,
     pub consensus_state: String,
     pub pog_state: Option<PogEpochMetrics>,
@@ -67,13 +69,13 @@ impl SlotMetrics {
     pub fn to_csv_header() -> String {
         "epoch,slot,miner,proposer_stake,block_hash,tx_count,avg_path_length,\
          min_path_length,max_path_length,median_path_length,stake_concentration,\
-         consensus_type,consensus_state"
+         gini_coefficient,consensus_type,consensus_state"
             .to_string()
     }
 
     pub fn to_csv_row(&self) -> String {
         format!(
-            "{},{},{},{:.6},{},{},{:.2},{},{},{},{:.6},{},{}",
+            "{},{},{},{:.6},{},{},{:.2},{},{},{},{:.6},{:.6},{},{}",
             self.epoch,
             self.slot,
             self.miner,
@@ -85,6 +87,7 @@ impl SlotMetrics {
             self.path_stats.max_length,
             self.path_stats.median_length,
             self.stake_concentration,
+            self.gini_coefficient,
             self.consensus_type,
             self.consensus_state
         )
@@ -189,4 +192,78 @@ pub fn calculate_path_stats(paths: Vec<Vec<String>>) -> PathStats {
         max_length,
         median_length,
     }
+}
+
+/// 计算Gini系数 (Gini coefficient)
+/// 用于衡量财富/权益分布的不平等程度
+/// 0 = 完全平等, 1 = 完全不平等
+pub fn calculate_gini(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+
+    let n = values.len() as f64;
+    let mut sorted_values = values.to_vec();
+    sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let sum: f64 = sorted_values.iter().sum();
+    if sum == 0.0 {
+        return 0.0;
+    }
+
+    let cumsum: f64 = sorted_values
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i as f64 + 1.0) * v)
+        .sum();
+
+    let gini = (2.0 * cumsum) / (n * sum) - (n + 1.0) / n;
+    gini.max(0.0).min(1.0)
+}
+
+/// 根据目标Gini系数生成权益分配
+/// 返回长度为node_num的权益数组
+pub fn generate_stake_by_gini(node_num: u32, target_gini: f64) -> Vec<f64> {
+    let n = node_num as usize;
+    if n == 0 {
+        return vec![];
+    }
+
+    // 简单方法：使用指数分布来近似目标Gini
+    // target_gini为0时，所有节点权益相等
+    // target_gini接近1时，权益高度集中
+
+    let lambda = if target_gini < 0.01 {
+        0.0
+    } else if target_gini > 0.99 {
+        5.0
+    } else {
+        // 通过二分查找找到合适的lambda
+        let mut low = 0.0;
+        let mut high = 5.0;
+        for _ in 0..20 {
+            let mid = (low + high) / 2.0;
+            let test_stakes: Vec<f64> = (0..n)
+                .map(|i| (-(mid * (i as f64 / n as f64))).exp())
+                .collect();
+            let gini = calculate_gini(&test_stakes);
+            if gini < target_gini {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        (low + high) / 2.0
+    };
+
+    let mut stakes: Vec<f64> = (0..n)
+        .map(|i| (-(lambda * (i as f64 / n as f64))).exp())
+        .collect();
+
+    // 标准化使总权益为node_num（平均每个节点1单位）
+    let sum: f64 = stakes.iter().sum();
+    let scale_factor = n as f64 / sum;
+    stakes.iter_mut().for_each(|s| *s *= scale_factor);
+
+    stakes
 }
