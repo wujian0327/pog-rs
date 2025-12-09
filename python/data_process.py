@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass, field
 from typing import List
 
@@ -132,7 +133,19 @@ class Blockchain:
         return edges
 
 
-def get_blockchain_from_json(path="../blockchain.json"):
+def get_project_root():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    while current_dir != os.path.dirname(current_dir):
+        if os.path.exists(os.path.join(current_dir, 'Cargo.toml')):
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+    return current_dir
+
+
+def get_blockchain_from_json(path=None):
+    if path is None:
+        project_root = get_project_root()
+        path = os.path.join(project_root, 'blockchain.json')
     with open(path, 'r') as f:
         block_list = json.load(f)
     # 创世区块去掉

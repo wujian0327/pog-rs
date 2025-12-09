@@ -64,6 +64,11 @@ struct Args {
     /// 0 = 完全平等，1 = 完全不平等
     #[clap(short, long, default_value = "0.0")]
     gini: f64,
+
+    /// 交易手续费 (Transaction fee)
+    /// 每笔交易的手续费，设置为0表示禁用手续费
+    #[clap(long, default_value = "0.0")]
+    transaction_fee: f64,
 }
 
 #[tokio::main]
@@ -88,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.consensus,
         args.topology,
         args.gini,
+        args.transaction_fee,
     )
     .await;
     Ok(())

@@ -33,6 +33,8 @@ pub struct Node {
     pub offline_until_epoch: Option<u64>,
     pub offline_probability: f64,
     pub sync_in_progress: bool,
+    pub transaction_fee: f64, // 交易手续费
+    pub balance: f64,         // 账户余额
 }
 
 #[derive(Clone)]
@@ -88,6 +90,8 @@ impl Node {
             offline_until_epoch: None,
             offline_probability: 0.1,
             sync_in_progress: false,
+            transaction_fee: 0.0,
+            balance: 0.0,
         }
     }
 
@@ -117,6 +121,8 @@ impl Node {
             offline_until_epoch: None,
             offline_probability: 0.1,
             sync_in_progress: false,
+            transaction_fee: 0.0,
+            balance: 0.0,
         }
     }
 
@@ -159,6 +165,8 @@ impl Node {
             offline_until_epoch: None,
             offline_probability: 0.1,
             sync_in_progress: false,
+            transaction_fee: 0.0,
+            balance: 0.0,
         }
     }
 
@@ -246,6 +254,28 @@ impl Node {
             self.node_type,
             self.get_address()
         );
+    }
+
+    pub fn set_transaction_fee(&mut self, fee: f64) {
+        self.transaction_fee = fee;
+    }
+
+    pub fn set_balance(&mut self, balance: f64) {
+        self.balance = balance;
+    }
+
+    pub fn get_balance(&self) -> f64 {
+        self.balance
+    }
+
+    /// 尝试扣除余额，如果余额不足则返回 false
+    pub fn deduct_balance(&mut self, amount: f64) -> bool {
+        if self.balance >= amount {
+            self.balance -= amount;
+            true
+        } else {
+            false
+        }
     }
 
     pub async fn run(&mut self) {
@@ -555,7 +585,27 @@ impl Node {
                             continue;
                         }
                     };
-                    let transaction = Transaction::new(to, 0, self.wallet.clone());
+
+                    // 检查余额是否充足
+                    if !self.deduct_balance(self.transaction_fee) {
+                        warn!(
+                            "Node[{}] insufficient balance: {} < {}",
+                            self.index, self.balance, self.transaction_fee
+                        );
+                        continue;
+                    }
+
+                    // 扣除余额后，同步到 Validator 的 stake
+                    self.world_state_sender
+                        .send(Message::new_update_validator_stake_msg(
+                            self.wallet.address.clone(),
+                            self.balance,
+                        ))
+                        .await
+                        .unwrap();
+
+                    let transaction =
+                        Transaction::with_fee(to, 0, self.transaction_fee, self.wallet.clone());
                     let mut transaction_paths = TransactionPaths::new(transaction);
                     debug!(
                         "Node[{}] received msg[{}]: transaction hash[{}],path[{}]",
@@ -651,7 +701,6 @@ impl Node {
                 }
                 MessageType::BecomeValidator => {
                     debug!("Node[{}] received msg[{}]", self.index, msg.msg_type);
-                    let default_state = 1f64;
 
                     // Try to parse stake_map from JSON data
                     let stake_map: std::collections::HashMap<String, f64> =
@@ -660,10 +709,14 @@ impl Node {
                             .and_then(|json| serde_json::from_str(&json).ok())
                             .unwrap_or_default();
 
+                    // 从 stake_map 中获取本节点的 stake，并同步到 balance
                     let my_stake = stake_map
                         .get(&self.wallet.address)
                         .copied()
-                        .unwrap_or(default_state);
+                        .unwrap_or(self.balance); // 如果没有在 stake_map 中找到，保持当前 balance
+
+                    self.set_balance(my_stake);
+
                     info!(
                         "Node[{}] with address[{}] becomes validator with stake {}",
                         self.index, self.wallet.address, my_stake
@@ -719,6 +772,23 @@ impl Node {
                                 info!("Node[{}] become validator->fake node", sybil.index);
                             }
                         }
+                    }
+                }
+                MessageType::UpdateNodeBalance => {
+                    // WorldState 通知 Node 更新其 balance（例如获得奖励）
+                    if msg.data.len() == 8 {
+                        let new_balance = f64::from_le_bytes([
+                            msg.data[0],
+                            msg.data[1],
+                            msg.data[2],
+                            msg.data[3],
+                            msg.data[4],
+                            msg.data[5],
+                            msg.data[6],
+                            msg.data[7],
+                        ]);
+                        self.set_balance(new_balance);
+                        debug!("Node[{}] updated balance to {}", self.index, new_balance);
                     }
                 }
                 MessageType::UpdateSlot => {
@@ -1197,5 +1267,30 @@ mod tests {
         handle1.abort();
         handle2.abort();
         handle3.abort();
+    }
+
+    #[test]
+    fn test_balance_management() {
+        let (_tx, _rx) = tokio::sync::mpsc::channel::<Message>(8);
+        let (world_tx, _world_rx) = tokio::sync::mpsc::channel::<Message>(8);
+        let bc = Blockchain::new(Block::gen_genesis_block());
+        let mut node = Node::new(0, 0, 0, bc, world_tx);
+
+        assert_eq!(node.get_balance(), 0.0);
+
+        node.set_balance(500.0);
+        assert_eq!(node.get_balance(), 500.0);
+
+        assert!(node.deduct_balance(100.0));
+        assert_eq!(node.get_balance(), 400.0);
+
+        assert!(node.deduct_balance(400.0));
+        assert_eq!(node.get_balance(), 0.0);
+
+        assert!(!node.deduct_balance(0.1));
+        assert_eq!(node.get_balance(), 0.0);
+
+        assert!(!node.deduct_balance(10.0));
+        assert_eq!(node.get_balance(), 0.0);
     }
 }

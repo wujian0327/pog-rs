@@ -9,6 +9,7 @@ pub struct Transaction {
     pub from: String,
     pub to: String,
     pub amount: i64,
+    pub fee: f64,  // 交易手续费
     pub hash: String,
     pub signature: String,
     pub timestamp: u64,
@@ -17,12 +18,17 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn new(to: String, amount: i64, wallet: Wallet) -> Transaction {
+        Self::with_fee(to, amount, 1.0, wallet)
+    }
+
+    pub fn with_fee(to: String, amount: i64, fee: f64, wallet: Wallet) -> Transaction {
         let from = wallet.address.clone();
 
         let mut t = Transaction {
             from: from.clone(),
             to: to.clone(),
             amount,
+            fee,
             hash: "".to_string(),
             signature: "".to_string(),
             timestamp: get_timestamp(),
@@ -44,6 +50,7 @@ impl Transaction {
             from: from.clone(),
             to: to.clone(),
             amount: self.amount,
+            fee: self.fee,
             hash: "".to_string(),
             signature: "".to_string(),
             timestamp: self.timestamp,

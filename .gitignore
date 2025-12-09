@@ -8,3 +8,4 @@
 *.csv
 blockchain.txt
 blockchain.json
+__pycache__/

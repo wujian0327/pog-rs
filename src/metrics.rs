@@ -39,6 +39,7 @@ pub struct EpochMetrics {
     pub path_stats: PathStats,
     pub stake_concentration: f64,
     pub gini_coefficient: f64, // Gini系数，衡量权益分布不平等程度
+    pub total_fees: f64,     // 总手续费
     pub consensus_type: String,
     pub consensus_state: String,
     pub pog_state: Option<PogEpochMetrics>,
@@ -98,7 +99,8 @@ impl EpochMetrics {
     pub fn to_csv_header() -> String {
         "epoch,duration_sec,block_count,total_tx,throughput_tx_per_sec,\
          avg_path_length,min_path_length,max_path_length,median_path_length,\
-         stake_concentration,consensus_type,consensus_state,pog_ntd,pog_avg_c_n,\
+         stake_concentration,gini_coefficient,total_fees,\
+         consensus_type,consensus_state,pog_ntd,pog_avg_c_n,\
          pog_min_c_n,pog_max_c_n,pog_avg_s_virtual,pog_min_s_virtual,pog_max_s_virtual"
             .to_string()
     }
@@ -129,26 +131,28 @@ impl EpochMetrics {
             };
 
         format!(
-            "{},{:.2},{},{},{:.2},{:.2},{},{},{},{:.6},{},{},{},{},{},{},{},{},{}",
-            self.epoch,
-            duration,
-            self.block_count,
-            self.total_tx_count,
-            self.total_tx_throughput,
-            self.path_stats.avg_length,
-            self.path_stats.min_length,
-            self.path_stats.max_length,
-            self.path_stats.median_length,
-            self.stake_concentration,
-            self.consensus_type,
-            self.consensus_state,
-            ntd,
-            avg_c_n,
-            min_c_n,
-            max_c_n,
-            avg_sv,
-            min_sv,
-            max_sv
+            "{},{:.2},{},{},{:.2},{:.2},{},{},{},{:.6},{:.6},{:.6},{},{},{},{},{},{},{},{},{}",
+            self.epoch,              // 0
+            duration,                // 1
+            self.block_count,        // 2
+            self.total_tx_count,     // 3
+            self.total_tx_throughput, // 4
+            self.path_stats.avg_length, // 5
+            self.path_stats.min_length, // 6
+            self.path_stats.max_length, // 7
+            self.path_stats.median_length, // 8
+            self.stake_concentration, // 9
+            self.gini_coefficient,   // 10
+            self.total_fees,         // 11
+            self.consensus_type,     // 12
+            self.consensus_state,    // 13
+            ntd,                     // 14
+            avg_c_n,                 // 15
+            min_c_n,                 // 16
+            max_c_n,                 // 17
+            avg_sv,                  // 18
+            min_sv,                  // 19
+            max_sv                   // 20
         )
     }
 }
@@ -267,3 +271,4 @@ pub fn generate_stake_by_gini(node_num: u32, target_gini: f64) -> Vec<f64> {
 
     stakes
 }
+

@@ -121,22 +121,23 @@ impl Block {
     }
 
     pub fn cal_merkle_root(mut leaves: Vec<String>) -> String {
-        if leaves.len() == 1 {
-            return leaves[0].clone();
+        // 使用迭代替代递归，避免深度递归导致栈溢出
+        while leaves.len() > 1 {
+            if leaves.len() % 2 != 0 {
+                leaves.push(leaves.last().unwrap().clone());
+            }
+
+            let mut next_level = Vec::new();
+            for pair in leaves.chunks(2) {
+                let mut combined = decode(pair[0].clone()).unwrap();
+                combined.append(&mut decode(pair[1].clone()).unwrap());
+                let hash = encode(tools::Hasher::hash(combined));
+                next_level.push(hash);
+            }
+            leaves = next_level;
         }
 
-        if leaves.len() % 2 != 0 {
-            leaves.push(leaves.last().unwrap().clone());
-        }
-
-        let mut next_level = Vec::new();
-        for pair in leaves.chunks(2) {
-            let mut combined = decode(pair[0].clone()).unwrap();
-            combined.append(&mut decode(pair[1].clone()).unwrap());
-            let hash = encode(tools::Hasher::hash(combined));
-            next_level.push(hash);
-        }
-        Block::cal_merkle_root(next_level)
+        leaves.into_iter().next().unwrap_or_else(String::new)
     }
 
     pub fn gen_genesis_block() -> Block {

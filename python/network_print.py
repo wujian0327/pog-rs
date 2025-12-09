@@ -1,5 +1,5 @@
 import json
-
+import os
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,10 +8,33 @@ from matplotlib import colors
 import data_process
 
 
-def print_graph(bc: data_process.Blockchain, json_file="../graph.json", output_path='../figures/graph.png'):
+def get_project_root():
+    """
+    获取项目根目录（往上查找直到找到 Cargo.toml）
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    while current_dir != os.path.dirname(current_dir):  # 不是根目录
+        if os.path.exists(os.path.join(current_dir, 'Cargo.toml')):
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+    return os.path.dirname(os.path.abspath(__file__))  # 备选：返回当前目录
+
+
+def print_graph(bc: data_process.Blockchain, json_file=None, output_path=None):
     """
     将graph.json文件转换为Matplotlib图表
     """
+    
+    # 如果未指定路径，则自动查找项目根目录
+    if json_file is None:
+        project_root = get_project_root()
+        json_file = os.path.join(project_root, 'graph.json')
+    
+    if output_path is None:
+        project_root = get_project_root()
+        figures_dir = os.path.join(project_root, 'figures')
+        os.makedirs(figures_dir, exist_ok=True)
+        output_path = os.path.join(figures_dir, 'graph.png')
 
     with open(json_file, 'r') as file:
         data = json.load(file)
@@ -85,7 +108,7 @@ def print_graph(bc: data_process.Blockchain, json_file="../graph.json", output_p
     cbar = plt.colorbar(nodes, label="Network Contribution Percentage", shrink=0.8)  # 颜色条说明
     # cbar.set_ticks([0, 25, 50, 75, 100])
     cbar.set_ticklabels([f"{bc.get_node_path_percentage(n) * 100:.2f}%" for n in G.nodes()])
-    ax.set_title("Validation of Network Contribution Quantification (100 Nodes)", fontsize=24, pad=20)
+    ax.set_title("Validation of Network Contribution Quantification", fontsize=24, pad=20)
 
     # 优化画布细节
     ax.margins(0.02)

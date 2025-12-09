@@ -3,6 +3,7 @@ use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
 use log::{info, trace, warn};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -222,6 +223,28 @@ impl Consensus for PowConsensus {
             self.difficulty,
             Self::compute_work_amount(self.difficulty)
         )
+    }
+
+    fn distribute_rewards(
+        &self,
+        block: &Block,
+        validators: &mut [Validator],
+        nodes_index: HashMap<String, u32>,
+    ) {
+        // PoW: 固定奖励 + 交易费用
+        if let Some(validator) = validators
+            .iter_mut()
+            .find(|v| v.address == block.header.miner)
+        {
+            let base_reward = 1.0; // 固定奖励
+            let tx_fees: f64 = block.body.transactions.iter().map(|tx| tx.fee).sum();
+            let total_reward = base_reward + tx_fees;
+            validator.stake += total_reward;
+            info!(
+                "PoW: Miner {} received reward: base={:.6} + fees={:.6} = {:.6}, new stake: {:.6}",
+                validator.address, base_reward, tx_fees, total_reward, validator.stake
+            );
+        }
     }
 }
 

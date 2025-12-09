@@ -78,22 +78,27 @@ impl BANetwork {
     fn add_node(&mut self, m: usize) {
         let new_node = self.degrees.len();
         let mut set: HashSet<usize> = HashSet::new();
-        let mut degree = 0;
 
-        for _ in 0..m {
+        // 选择 m 个不同的节点进行连接
+        // 需要确保不会选择相同的节点，且不会选择自己
+        while set.len() < m && set.len() < self.degrees.len() {
             let target = self.choose_node();
-            set.insert(target);
-            degree += 1;
+            // 避免自连接（虽然在 BA 模型中不应该发生）
+            if target != new_node {
+                set.insert(target);
+            }
         }
 
-        for target in set.clone() {
-            self.adjacency.get_mut(&target).unwrap().insert(new_node);
-            self.degrees[target] += 1;
-            self.total_edges += 2; // 双向边，各加1度
+        // 更新现有节点的邻接表和度数
+        for target in set.iter() {
+            self.adjacency.get_mut(target).unwrap().insert(new_node);
+            self.degrees[*target] += 1;
+            self.total_edges += 2; // 无向图，双向各加1
         }
 
-        self.adjacency.insert(new_node, set);
-        self.degrees.push(degree);
+        // 添加新节点
+        self.adjacency.insert(new_node, set.clone());
+        self.degrees.push(set.len()); // 新节点的度数 = 实际连接数
     }
 
     fn generate_ba_network(n_nodes: usize, m0: usize, m: usize) -> BANetwork {

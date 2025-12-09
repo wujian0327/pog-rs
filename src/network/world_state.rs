@@ -37,6 +37,7 @@ pub struct WorldState {
     metrics_epochs_file: Option<std::fs::File>,
     slot_duration: Duration,
     slot_per_epoch: u64,
+    pub nodes_index: HashMap<String, u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -102,6 +103,7 @@ impl WorldState {
                 metrics_epochs_file,
                 slot_duration,
                 slot_per_epoch,
+                nodes_index: HashMap::new(),
             },
             sender,
             receiver,
@@ -213,6 +215,23 @@ impl WorldState {
 
         // Collect epoch metrics
         self.collect_epoch_metrics().await;
+
+        // 打印每个 epoch 的节点余额信息
+        let mut node_stakes: Vec<(u32, f64)> = validators
+            .iter()
+            .filter_map(|validator| {
+                self.nodes_index
+                    .get(&validator.address)
+                    .map(|index| (*index, validator.stake))
+            })
+            .collect();
+        node_stakes.sort_by_key(|k| k.0);
+        for (index, stake) in node_stakes {
+            info!(
+                "Epoch[{}] Node[{}]: stake: {:.6}",
+                current_slot.current_epoch, index, stake
+            );
+        }
     }
 
     pub async fn get_current_slot(&self) -> SlotManager {
@@ -332,6 +351,7 @@ impl WorldState {
             path_stats: path_stats,
             stake_concentration,
             gini_coefficient,
+            total_fees: 0.0, // 初始化为0，后续从交易中计算
             consensus_type: self.consensus.name().to_string(),
             consensus_state,
             pog_state: None,
@@ -360,8 +380,8 @@ impl WorldState {
     }
 
     pub async fn run(self, mut receiver: Receiver<Message>) {
+        let node_index = self.nodes_index.clone();
         let shared_self = Arc::new(RwLock::new(self));
-
         let receiver_task = {
             let shared_self = Arc::clone(&shared_self);
             task::spawn(async move {
@@ -397,6 +417,28 @@ impl WorldState {
                                 validators.push(validator.clone());
                             }
                         }
+                        MessageType::UpdateValidatorStake => {
+                            // 解析消息中的 address 和 new_stake
+                            if let Ok(json_str) = String::from_utf8(msg.data.clone()) {
+                                if let Ok(payload) =
+                                    serde_json::from_str::<serde_json::Value>(&json_str)
+                                {
+                                    if let (Some(address), Some(new_stake)) = (
+                                        payload.get("address").and_then(|v| v.as_str()),
+                                        payload.get("stake").and_then(|v| v.as_f64()),
+                                    ) {
+                                        let shared_self = shared_self.write().await;
+                                        let mut validators = shared_self.validators.write().await;
+                                        // 更新对应 Validator 的 stake
+                                        if let Some(validator) =
+                                            validators.iter_mut().find(|v| v.address == address)
+                                        {
+                                            validator.stake = new_stake;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         MessageType::SendBlock => {
                             let block = match Block::from_json(msg.data) {
                                 Ok(b) => b,
@@ -406,14 +448,53 @@ impl WorldState {
                                 }
                             };
 
-                            let shared_self = shared_self.write().await;
-                            if let Err(e) = shared_self.blockchain.write().await.add_block(block) {
-                                match e {
-                                    _ => {
-                                        error!("World State Error: {}", e);
+                            {
+                                let mut shared_self = shared_self.write().await;
+                                if let Err(e) = shared_self
+                                    .blockchain
+                                    .write()
+                                    .await
+                                    .add_block(block.clone())
+                                {
+                                    match e {
+                                        _ => {
+                                            error!("World State Error: {}", e);
+                                        }
+                                    }
+                                    continue;
+                                }
+
+                                // 块添加成功后，立即分配奖励
+                                {
+                                    let mut validators = shared_self.validators.write().await;
+
+                                    // 创建一个可变的向量切片来修改
+                                    let validators_slice: &mut [Validator] = &mut validators;
+                                    shared_self.consensus.distribute_rewards(
+                                        &block,
+                                        validators_slice,
+                                        node_index.clone(),
+                                    );
+
+                                    // 在奖励分配后，同步每个获得奖励的节点的 balance
+                                    for validator in validators.iter() {
+                                        if let Some(sender) =
+                                            shared_self.nodes_sender.get(&validator.address)
+                                        {
+                                            let msg = Message::new_update_node_balance_msg(
+                                                validator.stake,
+                                            );
+                                            if let Err(e) = sender.send(msg).await {
+                                                warn!(
+                                                    "Failed to send UpdateNodeBalance to {}: {}",
+                                                    &validator.address
+                                                        [..8.min(validator.address.len())],
+                                                    e
+                                                );
+                                            }
+                                        }
                                     }
                                 }
-                                continue;
                             }
                             debug!("World State add block successfully");
                         }

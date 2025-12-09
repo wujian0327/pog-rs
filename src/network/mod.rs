@@ -34,6 +34,7 @@ pub async fn start_network(
     consensus: ConsensusType,
     topology: TopologyType,
     gini: f64,
+    transaction_fee: f64,
 ) {
     info!("Consensus Type is {}", consensus);
 
@@ -60,12 +61,13 @@ pub async fn start_network(
         .map(|i| {
             if i < node_num {
                 // Honest nodes
-                let node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                let mut node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                node.set_transaction_fee(transaction_fee);
                 node.simple_print();
                 (node.get_address(), node)
             } else if i < node_num + malicious_node_num {
                 // Malicious nodes with sybil
-                let node = Node::new_with_sybil_nodes(
+                let mut node = Node::new_with_sybil_nodes(
                     i,
                     0,
                     0,
@@ -73,6 +75,7 @@ pub async fn start_network(
                     world_sender.clone(),
                     fake_node_num as i32,
                 );
+                node.set_transaction_fee(transaction_fee);
                 node.simple_print();
                 (node.get_address(), node)
             } else {
@@ -80,6 +83,7 @@ pub async fn start_network(
                 let mut node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
                 node.set_node_type(NodeType::Unstable);
                 node.set_offline_probability(offline_probability);
+                node.set_transaction_fee(transaction_fee);
                 node.simple_print();
                 (node.get_address(), node)
             }
@@ -95,6 +99,8 @@ pub async fn start_network(
         .iter()
         .map(|(address, node)| (address.clone(), node.index))
         .collect();
+    world.nodes_index = nodes_index.clone();
+
     let nodes_address: Vec<String> = node_map.keys().cloned().collect();
     info!(
         "Generate {} honest nodes, {} malicious nodes, {} unstable nodes",

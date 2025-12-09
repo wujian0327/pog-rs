@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
@@ -51,5 +53,31 @@ impl Consensus for PosConsensus {
 
     fn state_summary(&self) -> String {
         "pos".to_string()
+    }
+
+    fn distribute_rewards(
+        &self,
+        block: &Block,
+        validators: &mut [Validator],
+        nodes_index: HashMap<String, u32>,
+    ) {
+        // PoS: 固定奖励 + 交易费用
+        if let Some(validator) = validators
+            .iter_mut()
+            .find(|v| v.address == block.header.miner)
+        {
+            let base_reward = 1.0; // 固定奖励
+            let tx_fees: f64 = block.body.transactions.iter().map(|tx| tx.fee).sum();
+            let total_reward = base_reward + tx_fees;
+            validator.stake += total_reward;
+            log::info!(
+                "PoS: Miner {} received reward: base={:.6} + fees={:.6} = {:.6}, new stake: {:.6}",
+                validator.address,
+                base_reward,
+                tx_fees,
+                total_reward,
+                validator.stake
+            );
+        }
     }
 }

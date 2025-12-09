@@ -110,6 +110,26 @@ impl Message {
             from,
         }
     }
+
+    pub fn new_update_validator_stake_msg(address: String, new_stake: f64) -> Message {
+        let payload = serde_json::json!({
+            "address": address,
+            "stake": new_stake
+        });
+        Message {
+            msg_type: MessageType::UpdateValidatorStake,
+            data: payload.to_string().into_bytes(),
+            from: "".to_string(),
+        }
+    }
+
+    pub fn new_update_node_balance_msg(new_balance: f64) -> Message {
+        Message {
+            msg_type: MessageType::UpdateNodeBalance,
+            data: new_balance.to_le_bytes().to_vec(),
+            from: "".to_string(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -126,6 +146,8 @@ pub enum MessageType {
     PrintBlockchain,
     RequestBlockSync,
     ResponseBlockSync,
+    UpdateValidatorStake,  // Node 通知 WorldState 更新 Validator 的 stake
+    UpdateNodeBalance,     // WorldState 通知 Node 更新其 balance
 }
 
 impl Display for MessageType {
@@ -169,6 +191,12 @@ impl Display for MessageType {
             }
             MessageType::ResponseBlockSync => {
                 write!(f, "ResponseBlockSync")
+            }
+            MessageType::UpdateValidatorStake => {
+                write!(f, "UpdateValidatorStake")
+            }
+            MessageType::UpdateNodeBalance => {
+                write!(f, "UpdateNodeBalance")
             }
         }
     }

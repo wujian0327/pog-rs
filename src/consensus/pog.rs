@@ -25,7 +25,7 @@ impl PogConsensus {
             alpha: 0.8,  // EMA factor: smaller alpha = longer memory
             k_sat: 1.0,  // Saturation scale
             k_base: 1.0, // Saturation base
-            omega: 0.0,  // Start with pure PoS (omega=0), gradually increase to 1
+            omega: 1.0,  // Start with pure PoS (omega=0), gradually increase to 1
         }
     }
 
@@ -75,32 +75,38 @@ impl PogConsensus {
 
         debug!("Virtual stake: {}", serde_json::to_string(&s_virtual_map)?);
 
-        // Step 4: Select proposer probabilistically
-        let validators_with_virtual_stake: Vec<Validator> = validators
+        // Step 4: Select proposer probabilistically using virtual stake
+        let validators_with_virtual_stake: Vec<(String, f64)> = validators
             .iter()
             .map(|x| {
-                let virtual_stake = s_virtual_map.get(&x.address.to_string()).unwrap_or(&0.0);
-                Validator {
-                    address: x.address.clone(),
-                    stake: *virtual_stake,
-                }
+                (
+                    x.address.clone(),
+                    *s_virtual_map.get(&x.address).unwrap_or(&0.0),
+                )
             })
             .collect();
 
-        let total_stake: f64 = validators_with_virtual_stake.iter().map(|v| v.stake).sum();
+        let total_virtual_stake: f64 = validators_with_virtual_stake.iter().map(|(_, vs)| vs).sum();
 
         let mut rng = StdRng::from_seed(combines_seeds);
-        let random_value = rng.gen_range(0.0..total_stake);
+        let random_value = if total_virtual_stake < 0.0001 {
+            0.0
+        } else {
+            rng.gen_range(0.0..total_virtual_stake.max(0.0001))
+        };
 
         let mut accumulated_weight = 0.0;
-        for validator in validators_with_virtual_stake {
-            accumulated_weight += validator.stake;
-            if accumulated_weight > random_value {
-                info!(
-                    "Proposer {} elected with virtual stake {}",
-                    validator.address, validator.stake
-                );
-                return Ok(validator);
+        for (address, virtual_stake) in validators_with_virtual_stake {
+            accumulated_weight += virtual_stake;
+            if accumulated_weight >= random_value {
+                // Find the original validator to return
+                if let Some(validator) = validators.iter().find(|v| v.address == address) {
+                    info!(
+                        "Proposer {} elected with virtual stake {:.6}",
+                        validator.address, virtual_stake
+                    );
+                    return Ok(validator.clone());
+                }
             }
         }
 
@@ -254,6 +260,109 @@ impl Consensus for PogConsensus {
 
     fn state_summary(&self) -> String {
         format!("pog(ntd={}, omega={:.2})", self.ntd, self.omega)
+    }
+
+    fn distribute_rewards(
+        &self,
+        block: &Block,
+        validators: &mut [Validator],
+        nodes_index: HashMap<String, u32>,
+    ) {
+        // POG: 根据论文的两层奖励分配机制
+        // 第1层：矿工直接获得交易费的一部分
+        // 第2层：剩余费用按网络贡献（虚拟股份）分配给所有验证者
+
+        let block_reward = 1.0;
+        // 计算本块总费用
+        let total_fees: f64 = block.body.transactions.iter().map(|tx| tx.fee).sum();
+
+        // 计算路径统计用于奖励惩罚
+        let paths: Vec<Vec<String>> = block.get_all_paths();
+        if paths.is_empty() {
+            info!(
+                "POG: No paths in block {}, miner gets all fees {:.6}",
+                block.header.index, total_fees
+            );
+            // 如果没有路径，矿工获得所有费用
+            if let Some(validator) = validators
+                .iter_mut()
+                .find(|v| v.address == block.header.miner)
+            {
+                validator.stake += block_reward + total_fees;
+                info!(
+                    "POG: Miner {} received reward: {:.6}, new stake: {:.6}",
+                    validator.address,
+                    block_reward + total_fees,
+                    validator.stake
+                );
+            }
+            return;
+        }
+
+        let avg_path_length = paths
+            .iter()
+            .map(|p| p.len().saturating_sub(1) as f64)
+            .sum::<f64>()
+            / paths.len() as f64;
+
+        // 计算惩罚因子：P(B) = (NTD / L_avg)^2，当 L_avg > NTD 时
+        let penalty_factor = if avg_path_length > self.ntd as f64 {
+            let ratio = self.ntd as f64 / avg_path_length;
+            ratio * ratio
+        } else {
+            1.0
+        };
+
+        debug!(
+            "POG: rewards distribution - total_fees={:.6}, avg_path_length={:.2}, penalty_factor={:.6}",
+            total_fees, avg_path_length, penalty_factor
+        );
+        // 重新计算虚拟股份进行分配
+        let s_real_map: HashMap<String, f64> = validators
+            .iter()
+            .map(|v| (v.address.clone(), v.stake))
+            .collect();
+        let normalized_stake = self.normalize_map(&s_real_map);
+        let normalized_contribution = self.normalize_map(&self.score_history);
+        let virtual_stake_map =
+            self.cal_virtual_stake(&s_real_map, &normalized_stake, &normalized_contribution);
+
+        // 第1层：矿工奖励 = 0.5 * total_fees * penalty_factor
+        let miner_share = block_reward + 0.5 * total_fees * penalty_factor;
+
+        // 矿工获得挖矿费用
+        if let Some(validator) = validators
+            .iter_mut()
+            .find(|v| v.address == block.header.miner)
+        {
+            validator.stake += miner_share;
+            let index = nodes_index.get(&validator.address).unwrap_or(&0);
+            let virtual_stake = virtual_stake_map.get(&validator.address).unwrap_or(&0.0);
+            info!(
+                "POG: Miner node[{}]   received reward: {:.6} (virtual_stake: {:.6}), new stake: {:.6}",
+                index, miner_share, virtual_stake, validator.stake
+            );
+        }
+
+        // 第2层：网络费用池 = total_fees * (1 - 0.5 * penalty_factor)
+        let network_pool = total_fees * (1.0 - 0.5 * penalty_factor);
+
+        // 按虚拟股份分配网络费用池
+        for validator in validators.iter_mut() {
+            if validator.address == block.header.miner {
+                continue;
+            }
+            let virtual_stake = virtual_stake_map.get(&validator.address).unwrap_or(&0.0);
+            let network_reward = network_pool * virtual_stake;
+            validator.stake += network_reward;
+            if network_reward > 0.0 {
+                let index = nodes_index.get(&validator.address).unwrap_or(&0);
+                info!(
+                    "POG: Node[{}] received network reward: {:.6} (virtual_stake: {:.6}), new stake: {:.6}",
+                    index, network_reward, virtual_stake, validator.stake
+                );
+            }
+        }
     }
 }
 
