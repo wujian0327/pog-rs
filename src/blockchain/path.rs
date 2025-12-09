@@ -5,7 +5,6 @@ use blst::min_sig::{PublicKey, Signature};
 use hex::decode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use zstd::zstd_safe::WriteBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Path {

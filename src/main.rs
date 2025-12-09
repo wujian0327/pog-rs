@@ -49,7 +49,7 @@ struct Args {
     pow_difficulty: usize,
 
     /// PoW最大线程数 (PoW max threads)
-    #[clap(long, default_value = "8")]
+    #[clap(long, default_value = "2")]
     pow_max_threads: usize,
 
     /// 共识算法类型 (Consensus algorithm type)

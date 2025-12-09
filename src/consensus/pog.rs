@@ -1,51 +1,85 @@
 use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
-use log::{debug, info, trace};
+use log::{debug, info};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub struct PogConsensus {
     ntd: usize,
+    // Temporal smoothing state: Score(n,t) for each node
+    score_history: HashMap<String, f64>,
+    // Parameters for contribution calculation
+    alpha: f64,  // EMA smoothing factor, default 0.2
+    k_sat: f64,  // Logarithmic saturation scale, default 1.0
+    k_base: f64, // Saturation base, default 1.0
+    omega: f64,  // Consensus weight balance, starts at 0 (pure PoS), increases toward 1
 }
 
 impl PogConsensus {
     pub fn new(initial_ntd: usize) -> Self {
-        PogConsensus { ntd: initial_ntd }
+        PogConsensus {
+            ntd: initial_ntd,
+            score_history: HashMap::new(),
+            alpha: 0.8,  // EMA factor: smaller alpha = longer memory
+            k_sat: 1.0,  // Saturation scale
+            k_base: 1.0, // Saturation base
+            omega: 0.0,  // Start with pure PoS (omega=0), gradually increase to 1
+        }
     }
 
-    fn k(&self) -> usize {
-        self.ntd * 2
+    /// Set the consensus weight parameter (omega)
+    pub fn set_omega(&mut self, omega: f64) {
+        self.omega = omega.max(0.0).min(1.0);
+    }
+
+    /// Compute position weights: alpha_k(L) = 2(L - k + 1) / (L(L + 1))
+    fn compute_position_weight(position: usize, path_length: usize) -> f64 {
+        if path_length == 0 || position > path_length || position == 0 {
+            return 0.0;
+        }
+        2.0 * (path_length - position + 1) as f64 / (path_length * (path_length + 1)) as f64
     }
 
     fn select_internal(
-        &self,
+        &mut self,
         validators: Vec<Validator>,
         combines_seeds: [u8; 32],
         blockchain: Blockchain,
     ) -> Result<Validator, ValidatorError> {
-        let k = self.k();
         let last_block = blockchain.get_last_block();
         let paths = last_block.get_all_paths();
-        let c_n = self.cal_network_contribution(paths, validators.clone());
+
+        // Step 1: Calculate network contribution (Score(n,t)) with temporal smoothing
+        let slot_contribution = self.cal_slot_contribution(&paths, &validators);
+        self.update_score_history(&slot_contribution, &validators);
+
         debug!(
-            "Calculate network contribution: {}",
-            serde_json::to_string(&c_n)?
+            "Score history: {}",
+            serde_json::to_string(&self.score_history)?
         );
+
+        // Step 2: Calculate normalized stake and contribution
         let s_real_map: HashMap<String, f64> = validators
             .iter()
             .map(|x| (x.address.to_string(), x.stake))
             .collect();
-        let s_virtual_map = self.cal_virtual_stake(s_real_map, c_n);
-        debug!(
-            "Calculate virtual stake: {}",
-            serde_json::to_string(&s_virtual_map)?
-        );
-        let validators: Vec<Validator> = validators
+
+        let normalized_stake = self.normalize_map(&s_real_map);
+        let normalized_contribution = self.normalize_map(&self.score_history);
+
+        // Step 3: Calculate virtual stake using hybrid formula
+        let s_virtual_map =
+            self.cal_virtual_stake(&s_real_map, &normalized_stake, &normalized_contribution);
+
+        debug!("Virtual stake: {}", serde_json::to_string(&s_virtual_map)?);
+
+        // Step 4: Select proposer probabilistically
+        let validators_with_virtual_stake: Vec<Validator> = validators
             .iter()
             .map(|x| {
-                let virtual_stake = s_virtual_map.get(&x.address.to_string()).unwrap();
+                let virtual_stake = s_virtual_map.get(&x.address.to_string()).unwrap_or(&0.0);
                 Validator {
                     address: x.address.clone(),
                     stake: *virtual_stake,
@@ -53,21 +87,17 @@ impl PogConsensus {
             })
             .collect();
 
-        // 计算总的权重
-        let total_stake: f64 = validators.clone().iter().map(|v| v.stake).sum();
+        let total_stake: f64 = validators_with_virtual_stake.iter().map(|v| v.stake).sum();
 
-        // 使用combine seed
         let mut rng = StdRng::from_seed(combines_seeds);
-
         let random_value = rng.gen_range(0.0..total_stake);
 
-        // 选择符合条件的第一个验证者
-        let mut accumulated_weight = 0f64;
-        for validator in validators.clone() {
+        let mut accumulated_weight = 0.0;
+        for validator in validators_with_virtual_stake {
             accumulated_weight += validator.stake;
             if accumulated_weight > random_value {
                 info!(
-                    "Miner {} has virtual stake {}",
+                    "Proposer {} elected with virtual stake {}",
                     validator.address, validator.stake
                 );
                 return Ok(validator);
@@ -77,83 +107,128 @@ impl PogConsensus {
         Err(ValidatorError::NOValidatorError)
     }
 
-    fn cal_network_contribution(
-        &self,
-        paths: Vec<Vec<String>>,
-        validators: Vec<Validator>,
-    ) -> HashMap<String, f64> {
-        let mut c_n: HashMap<String, f64> = HashMap::new();
-
-        paths.iter().for_each(|p| {
-            if p.is_empty() {
-                return;
-            }
-            //去掉miner
-            let p = p[..p.len() - 1].to_vec();
-            let c_p = if p.len() <= self.ntd {
-                1.0
-            } else {
-                1.0 / (1 + p.len() - self.ntd) as f64
-            };
-            let sum_s = p
-                .iter()
-                .map(|x| Self::get_real_stake(x.clone(), validators.clone()))
-                .sum::<f64>();
-            p.iter().for_each(|x| {
-                let c_n_p = c_p * Self::get_real_stake(x.clone(), validators.clone()) / sum_s;
-                *c_n.entry(x.clone()).or_insert(0.0) += c_n_p;
-            });
-        });
-        c_n
-    }
-
-    fn get_real_stake(n: String, validators: Vec<Validator>) -> f64 {
-        if let Some(v) = validators.iter().find(|x| x.address == n) {
-            return v.stake;
+    /// Normalize a map so all values sum to 1
+    fn normalize_map(&self, map: &HashMap<String, f64>) -> HashMap<String, f64> {
+        let sum: f64 = map.values().sum();
+        if sum == 0.0 {
+            return map.clone();
         }
-        0f64
+        map.iter().map(|(k, v)| (k.clone(), v / sum)).collect()
     }
 
+    /// Calculate path propagation value: c(p) = 1 if L(p) <= NTD, else 1/(1 + (L(p) - NTD))
+    fn compute_path_value(&self, path_length: usize) -> f64 {
+        if path_length <= self.ntd {
+            1.0
+        } else {
+            1.0 / (1.0 + (path_length - self.ntd) as f64)
+        }
+    }
+
+    /// Calculate raw slot contribution for a node from all paths in this slot
+    /// C_slot(n,t) = K_sat * log(1 + sum(r(n,p)) / K_base)
+    fn cal_slot_contribution(
+        &self,
+        paths: &[Vec<String>],
+        validators: &[Validator],
+    ) -> HashMap<String, f64> {
+        let mut raw_scores: HashMap<String, f64> = HashMap::new();
+
+        // Step 1: Calculate atomic scores for all paths
+        for path in paths {
+            if path.is_empty() {
+                continue;
+            }
+
+            // Remove miner node (last node in path)
+            let path_nodes = &path[..path.len() - 1];
+            let path_length = path_nodes.len();
+
+            if path_length == 0 {
+                continue;
+            }
+
+            // Calculate path value
+            let c_p = self.compute_path_value(path_length);
+
+            // Calculate total real stake in this path
+            let sum_stake: f64 = path_nodes
+                .iter()
+                .map(|n| Self::get_real_stake(n, validators))
+                .sum();
+
+            if sum_stake == 0.0 {
+                continue;
+            }
+
+            // Calculate atomic score for each node in this path
+            for (position, node) in path_nodes.iter().enumerate() {
+                let k_pos = position + 1; // 1-indexed position
+                let alpha_k = Self::compute_position_weight(k_pos, path_length);
+                let s_r = Self::get_real_stake(node, validators);
+                let s_hat = s_r / sum_stake; // Normalized stake in this path
+
+                let atomic_score = c_p * alpha_k * s_hat;
+                *raw_scores.entry(node.clone()).or_insert(0.0) += atomic_score;
+            }
+        }
+
+        // Step 2: Apply logarithmic saturation to prevent spam
+        // C_slot(n,t) = K_sat * log(1 + raw_score / K_base)
+        let mut slot_contribution: HashMap<String, f64> = HashMap::new();
+        for (node, raw_score) in raw_scores {
+            let saturated = self.k_sat * (1.0 + raw_score / self.k_base).ln();
+            slot_contribution.insert(node, saturated);
+        }
+
+        slot_contribution
+    }
+
+    /// Update temporal score history using EMA
+    /// Score(n,t) = alpha * C_slot(n,t) + (1 - alpha) * Score(n,t-1)
+    fn update_score_history(
+        &mut self,
+        slot_contribution: &HashMap<String, f64>,
+        validators: &[Validator],
+    ) {
+        for validator in validators {
+            let current_slot = slot_contribution.get(&validator.address).unwrap_or(&0.0);
+            let previous_score = self.score_history.get(&validator.address).unwrap_or(&0.0);
+
+            let new_score = self.alpha * current_slot + (1.0 - self.alpha) * previous_score;
+            self.score_history
+                .insert(validator.address.clone(), new_score);
+        }
+    }
+
+    /// Get real stake of a node from validator list
+    fn get_real_stake(node: &str, validators: &[Validator]) -> f64 {
+        validators
+            .iter()
+            .find(|v| v.address == node)
+            .map(|v| v.stake)
+            .unwrap_or(0.0)
+    }
+
+    /// Calculate virtual stake using hybrid formula:
+    /// S_v(n,t) = omega * hat_C(n,t) + (1 - omega) * hat_S_r(n)
     fn cal_virtual_stake(
         &self,
-        real_stake_map: HashMap<String, f64>,
-        c_n: HashMap<String, f64>,
+        real_stake_map: &HashMap<String, f64>,
+        normalized_stake: &HashMap<String, f64>,
+        normalized_contribution: &HashMap<String, f64>,
     ) -> HashMap<String, f64> {
-        let k = self.k();
-        let c_sum = c_n.iter().map(|(_n, v)| v).sum::<f64>();
-        let mut c_mao = HashMap::new();
-        c_n.iter().for_each(|(k, v)| {
-            c_mao.insert(k.clone(), v / c_sum);
-        });
-        trace!("c_mao: {:#?}", c_mao);
-        let s_sum = real_stake_map.iter().map(|(_n, v)| v).sum::<f64>();
-        let mut s_mao = HashMap::new();
-        real_stake_map.iter().for_each(|(k, v)| {
-            s_mao.insert(k.clone(), v / s_sum);
-        });
-        trace!("s_mao: {:#?}", s_mao);
-        let s_phi: HashMap<String, f64> = s_mao
+        real_stake_map
             .iter()
-            .map(|(n, v)| {
-                let mut x = 1f64 / 2f64 - v;
-                if x < 0f64 {
-                    x = 0f64;
-                }
-                return (n.clone(), x);
+            .map(|(node, _real_stake)| {
+                let hat_c = normalized_contribution.get(node).unwrap_or(&0.0);
+                let hat_s = normalized_stake.get(node).unwrap_or(&0.0);
+
+                // S_v(n,t) = omega * hat_C + (1 - omega) * hat_S_r
+                let s_v = self.omega * hat_c + (1.0 - self.omega) * hat_s;
+                (node.clone(), s_v)
             })
-            .collect();
-        trace!("s_phi: {:#?}", s_phi);
-        let s_virtual_map: HashMap<String, f64> = real_stake_map
-            .iter()
-            .map(|(n, v)| {
-                let c = c_mao.get(n).unwrap_or(&0f64);
-                let s_p = s_phi.get(n).unwrap_or(&0f64);
-                let s_v = v * (1f64 + k as f64 * c * s_p);
-                return (n.clone(), s_v);
-            })
-            .collect();
-        trace!("s_virtual_map: {:#?}", s_virtual_map);
-        s_virtual_map
+            .collect()
     }
 }
 
@@ -174,10 +249,11 @@ impl Consensus for PogConsensus {
     fn on_epoch_end(&mut self, blocks: &[Block]) {
         let paths: Vec<Vec<String>> = blocks.iter().flat_map(|b| b.get_all_paths()).collect();
         self.adjust_ntd(&paths);
+        self.set_omega(self.omega + 0.1);
     }
 
     fn state_summary(&self) -> String {
-        format!("pog(ntd={})", self.ntd)
+        format!("pog(ntd={}, omega={:.2})", self.ntd, self.omega)
     }
 }
 
@@ -208,12 +284,11 @@ mod tests {
     use crate::consensus::Validator;
     use crate::wallet::Wallet;
     use log::info;
-    use std::collections::HashMap;
 
     #[tokio::test]
-    async fn cal_network_contribution() {
+    async fn test_contribution_calculation() {
         let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Trace)
+            .filter_level(log::LevelFilter::Debug)
             .is_test(true)
             .try_init();
 
@@ -221,31 +296,54 @@ mod tests {
         let wallet2 = Wallet::new();
         let wallet3 = Wallet::new();
         let miner = Wallet::new();
+
         let transaction = Transaction::new("123".to_string(), 32, wallet.clone());
         let mut transaction_paths = TransactionPaths::new(transaction.clone());
         transaction_paths.add_path(wallet2.address.clone(), wallet.clone());
         transaction_paths.add_path(wallet3.address.clone(), wallet2.clone());
         transaction_paths.add_path(miner.address.clone(), wallet3.clone());
 
-        //check aggregated_signed_paths
         let aggregated_signed_paths =
             AggregatedSignedPaths::from_transaction_paths(transaction_paths);
 
         let paths = vec![aggregated_signed_paths.paths];
-        let v1 = Validator::new(wallet.address, 1f64);
-        let v2 = Validator::new(wallet2.address, 2f64);
-        let v3 = Validator::new(wallet3.address, 3f64);
-        let miner = Validator::new(miner.address, 4f64);
-        let validators = vec![v1, v2, v3, miner];
-        let pog = PogConsensus::new(3);
-        let c_n = pog.cal_network_contribution(paths, validators.clone());
-        info!("c_n: {:#?}", c_n);
 
-        let s_real_map: HashMap<String, f64> = validators
+        let v1 = Validator::new(wallet.address, 1.0);
+        let v2 = Validator::new(wallet2.address, 2.0);
+        let v3 = Validator::new(wallet3.address, 3.0);
+        let miner_v = Validator::new(miner.address, 4.0);
+        let validators = vec![v1, v2, v3, miner_v];
+
+        let mut pog = PogConsensus::new(3);
+
+        // Test with pure PoS (omega = 0)
+        pog.set_omega(0.0);
+        let slot_contribution = pog.cal_slot_contribution(&paths, &validators);
+        info!("Slot contribution (omega=0): {:#?}", slot_contribution);
+
+        pog.update_score_history(&slot_contribution, &validators);
+        info!("Score history: {:#?}", pog.score_history);
+
+        let s_real_map: std::collections::HashMap<String, f64> = validators
             .iter()
             .map(|x| (x.address.to_string(), x.stake))
             .collect();
-        let s_v = pog.cal_virtual_stake(s_real_map, c_n);
-        info!("s_v: {:#?}", s_v);
+
+        let normalized_stake = pog.normalize_map(&s_real_map);
+        let normalized_contribution = pog.normalize_map(&pog.score_history);
+
+        let s_v = pog.cal_virtual_stake(&s_real_map, &normalized_stake, &normalized_contribution);
+        info!("Virtual stake (omega=0, pure PoS): {:#?}", s_v);
+
+        // Test with hybrid consensus (omega = 0.5)
+        pog.set_omega(0.5);
+        let s_v_hybrid =
+            pog.cal_virtual_stake(&s_real_map, &normalized_stake, &normalized_contribution);
+        info!("Virtual stake (omega=0.5, hybrid): {:#?}", s_v_hybrid);
+
+        // Verify that virtual stakes sum to 1
+        let sum: f64 = s_v_hybrid.values().sum();
+        info!("Sum of virtual stakes: {}", sum);
+        assert!((sum - 1.0).abs() < 1e-6, "Virtual stakes should sum to 1");
     }
 }

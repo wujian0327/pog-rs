@@ -3,7 +3,6 @@ use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::HashMap;
 
 pub struct PosConsensus;
 
