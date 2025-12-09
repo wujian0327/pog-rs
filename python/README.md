@@ -1,3 +1,3 @@
 ```shell
-pip install networkx matplotlib dataclasses_json
+pip install networkx matplotlib dataclasses_json pandas
 ```

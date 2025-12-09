@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// 每个槽的指标
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -11,11 +10,13 @@ pub struct SlotMetrics {
     pub timestamp: u64,
     pub block_hash: String,
     pub tx_count: usize,
+    pub throughput: f64, // 吞吐量 (tx/s)
     pub path_stats: PathStats,
     pub stake_concentration: f64, // Herfindahl index
     pub gini_coefficient: f64,    // Gini系数，衡量权益分布不平等程度
     pub consensus_type: String,
     pub consensus_state: String, // e.g., "pog(ntd=3)", "pos"
+    pub tx_packing_delay_stats: TxPackingDelayStats, // 交易打包延迟统计
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -26,63 +27,30 @@ pub struct PathStats {
     pub median_length: usize,
 }
 
-/// 每个epoch的指标
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct EpochMetrics {
-    pub epoch: u64,
-    pub start_timestamp: u64,
-    pub end_timestamp: u64,
-    pub block_count: usize,
-    pub total_tx_count: usize,
-    pub total_tx_throughput: f64, // tx/s
-    pub miner_distribution: HashMap<String, usize>,
-    pub path_stats: PathStats,
-    pub stake_concentration: f64,
-    pub gini_coefficient: f64, // Gini系数，衡量权益分布不平等程度
-    pub total_fees: f64,     // 总手续费
-    pub consensus_type: String,
-    pub consensus_state: String,
-    pub pog_state: Option<PogEpochMetrics>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PogEpochMetrics {
-    pub ntd_final: usize,
-    pub c_n_stats: ContributionStats,
-    pub s_virtual_stats: VirtualStakeStats,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ContributionStats {
-    pub avg_contribution: f64,
-    pub min_contribution: f64,
-    pub max_contribution: f64,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct VirtualStakeStats {
-    pub avg_virtual_stake: f64,
-    pub min_virtual_stake: f64,
-    pub max_virtual_stake: f64,
+pub struct TxPackingDelayStats {
+    pub avg_delay_ms: f64, // 平均打包延迟 (ms)
 }
 
 impl SlotMetrics {
     pub fn to_csv_header() -> String {
-        "epoch,slot,miner,proposer_stake,block_hash,tx_count,avg_path_length,\
+        "epoch,slot,miner,proposer_stake,timestamp,block_hash,tx_count,throughput,avg_path_length,\
          min_path_length,max_path_length,median_path_length,stake_concentration,\
-         gini_coefficient,consensus_type,consensus_state"
+         gini_coefficient,consensus_type,consensus_state,avg_tx_delay_ms"
             .to_string()
     }
 
     pub fn to_csv_row(&self) -> String {
         format!(
-            "{},{},{},{:.6},{},{},{:.2},{},{},{},{:.6},{:.6},{},{}",
+            "{},{},{},{:.6},{},{},{},{:.2},{:.2},{},{},{},{:.6},{:.6},{},{},{:.2}",
             self.epoch,
             self.slot,
             self.miner,
             self.proposer_stake,
+            self.timestamp,
             self.block_hash,
             self.tx_count,
+            self.throughput,
             self.path_stats.avg_length,
             self.path_stats.min_length,
             self.path_stats.max_length,
@@ -90,71 +58,36 @@ impl SlotMetrics {
             self.stake_concentration,
             self.gini_coefficient,
             self.consensus_type,
-            self.consensus_state
+            self.consensus_state,
+            self.tx_packing_delay_stats.avg_delay_ms,
         )
     }
 }
 
-impl EpochMetrics {
-    pub fn to_csv_header() -> String {
-        "epoch,duration_sec,block_count,total_tx,throughput_tx_per_sec,\
-         avg_path_length,min_path_length,max_path_length,median_path_length,\
-         stake_concentration,gini_coefficient,total_fees,\
-         consensus_type,consensus_state,pog_ntd,pog_avg_c_n,\
-         pog_min_c_n,pog_max_c_n,pog_avg_s_virtual,pog_min_s_virtual,pog_max_s_virtual"
-            .to_string()
+/// 计算交易打包平均延迟统计 (以毫秒为单位)
+pub fn calculate_tx_packing_delay(
+    transactions_timestamp: Vec<u64>,
+    block_timestamp: u64,
+) -> TxPackingDelayStats {
+    if transactions_timestamp.is_empty() {
+        return TxPackingDelayStats { avg_delay_ms: 0.0 };
     }
 
-    pub fn to_csv_row(&self) -> String {
-        let duration = self.end_timestamp.saturating_sub(self.start_timestamp) as f64 / 1000.0;
-        let (ntd, avg_c_n, min_c_n, max_c_n, avg_sv, min_sv, max_sv) =
-            if let Some(pog) = &self.pog_state {
-                (
-                    pog.ntd_final.to_string(),
-                    format!("{:.6}", pog.c_n_stats.avg_contribution),
-                    format!("{:.6}", pog.c_n_stats.min_contribution),
-                    format!("{:.6}", pog.c_n_stats.max_contribution),
-                    format!("{:.6}", pog.s_virtual_stats.avg_virtual_stake),
-                    format!("{:.6}", pog.s_virtual_stats.min_virtual_stake),
-                    format!("{:.6}", pog.s_virtual_stats.max_virtual_stake),
-                )
+    // 计算平均打包延迟 (ms)
+    let total_delay: f64 = transactions_timestamp
+        .iter()
+        .map(|tx_time| {
+            if block_timestamp >= *tx_time {
+                (block_timestamp - tx_time) as f64
             } else {
-                (
-                    "N/A".to_string(),
-                    "N/A".to_string(),
-                    "N/A".to_string(),
-                    "N/A".to_string(),
-                    "N/A".to_string(),
-                    "N/A".to_string(),
-                    "N/A".to_string(),
-                )
-            };
+                0.0
+            }
+        })
+        .sum();
 
-        format!(
-            "{},{:.2},{},{},{:.2},{:.2},{},{},{},{:.6},{:.6},{:.6},{},{},{},{},{},{},{},{},{}",
-            self.epoch,              // 0
-            duration,                // 1
-            self.block_count,        // 2
-            self.total_tx_count,     // 3
-            self.total_tx_throughput, // 4
-            self.path_stats.avg_length, // 5
-            self.path_stats.min_length, // 6
-            self.path_stats.max_length, // 7
-            self.path_stats.median_length, // 8
-            self.stake_concentration, // 9
-            self.gini_coefficient,   // 10
-            self.total_fees,         // 11
-            self.consensus_type,     // 12
-            self.consensus_state,    // 13
-            ntd,                     // 14
-            avg_c_n,                 // 15
-            min_c_n,                 // 16
-            max_c_n,                 // 17
-            avg_sv,                  // 18
-            min_sv,                  // 19
-            max_sv                   // 20
-        )
-    }
+    let avg_delay_ms = total_delay / transactions_timestamp.len() as f64;
+
+    TxPackingDelayStats { avg_delay_ms }
 }
 
 /// 计算Herfindahl index（权益集中度）
@@ -233,19 +166,23 @@ pub fn generate_stake_by_gini(node_num: u32, target_gini: f64) -> Vec<f64> {
         return vec![];
     }
 
-    // 简单方法：使用指数分布来近似目标Gini
+    // 使用指数分布来近似目标Gini
     // target_gini为0时，所有节点权益相等
     // target_gini接近1时，权益高度集中
+    // 公式：stake(i) = exp(-(lambda * i/n))
 
     let lambda = if target_gini < 0.01 {
         0.0
     } else if target_gini > 0.99 {
-        5.0
+        20.0
     } else {
         // 通过二分查找找到合适的lambda
+        // 对于n个节点，lambda范围需要更大才能覆盖各种Gini值
         let mut low = 0.0;
-        let mut high = 5.0;
-        for _ in 0..20 {
+        let mut high = 20.0;
+
+        for _ in 0..30 {
+            // 增加迭代次数提高精度
             let mid = (low + high) / 2.0;
             let test_stakes: Vec<f64> = (0..n)
                 .map(|i| (-(mid * (i as f64 / n as f64))).exp())
@@ -271,4 +208,3 @@ pub fn generate_stake_by_gini(node_num: u32, target_gini: f64) -> Vec<f64> {
 
     stakes
 }
-

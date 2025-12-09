@@ -259,7 +259,7 @@ impl Consensus for PogConsensus {
     }
 
     fn state_summary(&self) -> String {
-        format!("pog(ntd={}, omega={:.2})", self.ntd, self.omega)
+        format!("pog(ntd={}_omega={:.2})", self.ntd, self.omega)
     }
 
     fn distribute_rewards(

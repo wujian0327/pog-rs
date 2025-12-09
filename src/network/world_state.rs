@@ -4,7 +4,7 @@ use crate::consensus::pog::PogConsensus;
 use crate::consensus::pos::PosConsensus;
 use crate::consensus::pow::PowConsensus;
 use crate::consensus::{Consensus, ConsensusType, RandaoSeed, Validator};
-use crate::metrics::{self, calculate_stake_concentration, EpochMetrics, SlotMetrics};
+use crate::metrics::{self, calculate_stake_concentration, SlotMetrics};
 use crate::network::message::{Message, MessageType};
 use crate::tools::get_timestamp;
 use crate::{consensus, tools};
@@ -33,8 +33,8 @@ pub struct WorldState {
     pub nodes_sender: HashMap<String, Sender<Message>>,
     pub blockchain: Arc<RwLock<Blockchain>>,
     pub consensus: Box<dyn Consensus>,
+    consensus_name: String,
     metrics_slots_file: Option<std::fs::File>,
-    metrics_epochs_file: Option<std::fs::File>,
     slot_duration: Duration,
     slot_per_epoch: u64,
     pub nodes_index: HashMap<String, u32>,
@@ -63,6 +63,7 @@ impl WorldState {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
         let slot_duration = Duration::from_secs(slot_duration_secs);
+        let consensus_name = consensus_type.to_string();
         let consensus: Box<dyn Consensus> = match consensus_type {
             ConsensusType::POG => Box::new(PogConsensus::new(0)),
             ConsensusType::POS => Box::new(PosConsensus::new()),
@@ -72,17 +73,13 @@ impl WorldState {
                 slot_duration,
             )),
         };
-        // Initialize metrics files
+        // Initialize metrics files - delete old file and create new one
+        let metrics_filename = format!("metrics_slots_{}.csv", consensus_name);
+        let _ = std::fs::remove_file(&metrics_filename); // 删除旧文件
         let metrics_slots_file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("metrics_slots.csv")
-            .ok();
-
-        let metrics_epochs_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("metrics_epochs.csv")
+            .open(&metrics_filename)
             .ok();
 
         (
@@ -99,8 +96,8 @@ impl WorldState {
                 nodes_sender,
                 blockchain: Arc::new(RwLock::new(blockchain)),
                 consensus,
+                consensus_name,
                 metrics_slots_file,
-                metrics_epochs_file,
                 slot_duration,
                 slot_per_epoch,
                 nodes_index: HashMap::new(),
@@ -213,9 +210,6 @@ impl WorldState {
             start_timestamp: get_timestamp(),
         }));
 
-        // Collect epoch metrics
-        self.collect_epoch_metrics().await;
-
         // 打印每个 epoch 的节点余额信息
         let mut node_stakes: Vec<(u32, f64)> = validators
             .iter()
@@ -246,6 +240,14 @@ impl WorldState {
         // Get last block for stats
         let last_block = blockchain.get_last_block();
         let tx_count = last_block.body.transactions.len();
+
+        // Calculate throughput (tx/s)
+        let throughput = if self.slot_duration.as_secs() > 0 {
+            tx_count as f64 / self.slot_duration.as_secs_f64()
+        } else {
+            0.0
+        };
+
         let paths = last_block.body.paths;
         let paths: Vec<Vec<String>> = paths.iter().map(|p| p.paths.clone()).collect();
         let path_stats = metrics::calculate_path_stats(paths);
@@ -254,6 +256,16 @@ impl WorldState {
         let stake_values: Vec<f64> = validators.iter().map(|v| v.stake).collect();
         let stake_concentration = calculate_stake_concentration(&stake_values);
         let gini_coefficient = metrics::calculate_gini(&stake_values);
+
+        // Calculate transaction packing delay
+        let tx_timestamps: Vec<u64> = last_block
+            .body
+            .transactions
+            .iter()
+            .map(|tx| tx.timestamp)
+            .collect();
+        let tx_packing_delay_stats =
+            metrics::calculate_tx_packing_delay(tx_timestamps, last_block.header.timestamp);
 
         // Get consensus state summary
         let consensus_state = self.consensus.state_summary();
@@ -267,11 +279,13 @@ impl WorldState {
             timestamp: tools::get_timestamp(),
             block_hash: last_block.header.hash.clone(),
             tx_count,
+            throughput,
             path_stats: path_stats,
             stake_concentration,
             gini_coefficient,
             consensus_type: self.consensus.name().to_string(),
             consensus_state,
+            tx_packing_delay_stats,
         };
 
         // Write to CSV
@@ -279,7 +293,7 @@ impl WorldState {
             if let Ok(file) = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open("metrics_slots.csv")
+                .open(format!("metrics_slots_{}.csv", self.consensus_name))
             {
                 self.metrics_slots_file = Some(file);
             }
@@ -292,89 +306,6 @@ impl WorldState {
             }
 
             let _ = writeln!(file, "{}", slot_metrics.to_csv_row());
-            let _ = file.flush();
-        }
-    }
-
-    async fn collect_epoch_metrics(&mut self) {
-        let current_slot = self.current_slot.read().await.clone();
-        let validators = self.validators.read().await.clone();
-        let blockchain = self.blockchain.read().await.clone();
-
-        // Get blocks from last epoch
-        let blocks = blockchain.get_last_epoch_block();
-        let block_count = blocks.len();
-
-        // Calculate total tx and miner distribution
-        let mut total_tx_count = 0usize;
-        let mut miner_distribution: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-        let mut paths: Vec<Vec<String>> = Vec::new();
-
-        for block in &blocks {
-            total_tx_count += block.body.transactions.len();
-
-            // Track miner distribution
-            *miner_distribution
-                .entry(block.header.miner.clone())
-                .or_insert(0) += 1;
-
-            let block_paths: Vec<Vec<String>> =
-                block.body.paths.iter().map(|p| p.paths.clone()).collect();
-            paths.extend(block_paths);
-        }
-
-        let throughput = if block_count > 0 {
-            total_tx_count as f64 / (block_count as f64 * self.slot_duration.as_secs_f64())
-        } else {
-            0.0
-        };
-
-        let path_stats = metrics::calculate_path_stats(paths);
-
-        let stake_values: Vec<f64> = validators.iter().map(|v| v.stake).collect();
-        let stake_concentration = calculate_stake_concentration(&stake_values);
-        let gini_coefficient = metrics::calculate_gini(&stake_values);
-
-        // Get consensus state
-        let consensus_state = self.consensus.state_summary();
-
-        // Create metrics
-        let epoch_metrics = EpochMetrics {
-            epoch: current_slot.current_epoch.saturating_sub(1),
-            start_timestamp: current_slot.start_timestamp,
-            end_timestamp: tools::get_timestamp(),
-            block_count,
-            total_tx_count,
-            total_tx_throughput: throughput,
-            miner_distribution,
-            path_stats: path_stats,
-            stake_concentration,
-            gini_coefficient,
-            total_fees: 0.0, // 初始化为0，后续从交易中计算
-            consensus_type: self.consensus.name().to_string(),
-            consensus_state,
-            pog_state: None,
-        };
-
-        // Write to CSV
-        if self.metrics_epochs_file.is_none() {
-            if let Ok(file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("metrics_epochs.csv")
-            {
-                self.metrics_epochs_file = Some(file);
-            }
-        }
-
-        if let Some(ref mut file) = self.metrics_epochs_file {
-            // Write header if file is empty
-            if file.metadata().map(|m| m.len()).unwrap_or(0) == 0 {
-                let _ = writeln!(file, "{}", EpochMetrics::to_csv_header());
-            }
-
-            let _ = writeln!(file, "{}", epoch_metrics.to_csv_row());
             let _ = file.flush();
         }
     }

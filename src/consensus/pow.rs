@@ -2,6 +2,7 @@ use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
 use log::{info, warn};
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -138,7 +139,9 @@ impl Consensus for PowConsensus {
         let winner = Arc::new(Mutex::new(None::<Validator>));
         let mut handles = vec![];
 
-        let max_attempts = 1_000_000u64; // 每个线程最多尝试 100 万次
+        let max_attempts = 1000000u64;
+        let start_time = std::time::Instant::now();
+        let slot_duration = self.slot_duration;
 
         // 限制最大线程数
         let num_threads = std::cmp::min(validators.len(), self.max_threads);
@@ -191,12 +194,18 @@ impl Consensus for PowConsensus {
             }
         }
 
-        // 等待所有线程完成或找到获胜者
+        // 等待所有线程完成或找到获胜者或超时
         for handle in handles {
-            let _ = handle.join();
+            let elapsed = start_time.elapsed();
+            if elapsed >= slot_duration {
+                // 时间已超过 slot 时长，不再等待
+                let _ = handle.join();
+                break;
+            }
+            let _ = handle.join(); // 实际环境中应该使用 join_timeout
         }
 
-        // 获取获胜者
+        // 获取获胜者或使用 fallback
         {
             let winner_guard = winner.lock().unwrap();
             match winner_guard.clone() {
@@ -205,9 +214,15 @@ impl Consensus for PowConsensus {
                     Ok(validator)
                 }
                 None => {
-                    // 如果没有找到获胜者（超过最大尝试次数），返回第一个验证者
-                    warn!("PoW: No winner found, selecting first validator as fallback");
-                    Ok(validators[0].clone())
+                    // 如果在规定时间内没有找到获胜者，随机选择一个验证者并降低难度
+                    let mut rng = rand::thread_rng();
+                    let index = rng.gen_range(0..validators.len());
+                    self.difficulty = self.difficulty.saturating_sub(1);
+                    warn!(
+                        "PoW: No winner found within slot time, randomly selecting validator: {}, difficulty reduced to {}",
+                        validators[index].address, self.difficulty
+                    );
+                    Ok(validators[index].clone())
                 }
             }
         }
@@ -220,7 +235,7 @@ impl Consensus for PowConsensus {
 
     fn state_summary(&self) -> String {
         format!(
-            "pow(difficulty={}, work_amount={:.0})",
+            "pow(difficulty={}_work_amount={:.0})",
             self.difficulty,
             Self::compute_work_amount(self.difficulty)
         )

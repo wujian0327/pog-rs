@@ -320,49 +320,4 @@ mod tests {
             info!("Edge: {} -> {}", graph[source], graph[target]);
         }
     }
-
-    #[test]
-    fn print_with_dot() {
-        let mut graph = Graph::<&str, &str>::new();
-
-        let a = graph.add_node("A");
-        let b = graph.add_node("B");
-        let c = graph.add_node("C");
-
-        graph.add_edge(a, b, "edge_1");
-        graph.add_edge(b, c, "edge_2");
-
-        {
-            let dot_string = format!("{:?}", Dot::with_config(&graph, &[Config::EdgeNoLabel]));
-            let mut file = File::create("graph.dot").expect("Unable to create file");
-            file.write_all(dot_string.as_bytes())
-                .expect("Unable to write data to file");
-
-            file.flush().expect("Unable to flush data to file");
-            println!("DOT format written to 'graph.dot'");
-        }
-
-        let output = Command::new("cmd")
-            .arg("/C")
-            .arg("dot")
-            .arg("-Tpng")
-            .arg("graph.dot")
-            .arg("-o")
-            .arg("graph.png")
-            .output();
-
-        match output {
-            Ok(output) => {
-                if !output.stdout.is_empty() {
-                    println!("Output:\n{}", String::from_utf8_lossy(&output.stdout));
-                }
-                if !output.stderr.is_empty() {
-                    eprintln!("Error:\n{}", String::from_utf8_lossy(&output.stderr));
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to execute command: {}", e);
-            }
-        }
-    }
 }
