@@ -32,10 +32,11 @@ struct BANetwork {
     adjacency: HashMap<usize, HashSet<usize>>, // 邻接表：节点 -> 连接的节点
     degrees: Vec<usize>,                       // 节点度数列表（索引为节点ID）
     total_edges: usize,                        // 总边数的两倍（无向图）
+    rng: rand::rngs::StdRng,                   // 随机数生成器（带种子）
 }
 
 impl BANetwork {
-    fn new(m0: usize) -> Self {
+    fn new(m0: usize, rng: rand::rngs::StdRng) -> Self {
         let mut adjacency = HashMap::new();
         let mut degrees = vec![0; m0];
 
@@ -55,14 +56,15 @@ impl BANetwork {
             adjacency,
             degrees,
             total_edges: m0 * (m0 - 1), // 总边数（无向图每条边算两次）
+            rng,
         }
     }
 
     // 选择要连接的节点（返回选中的节点ID）
-    fn choose_node(&self) -> usize {
-        let mut rng = rand::thread_rng();
+    fn choose_node(&mut self) -> usize {
+        use rand::Rng;
         let mut sum = 0;
-        let target = rng.gen_range(0..self.total_edges);
+        let target = self.rng.gen_range(0..self.total_edges);
 
         // 遍历所有节点，通过度数累计概率
         for (node, &degree) in self.degrees.iter().enumerate() {
@@ -100,9 +102,11 @@ impl BANetwork {
         self.degrees.push(set.len()); // 新节点的度数 = 实际连接数
     }
 
-    fn generate_ba_network(n_nodes: usize, m0: usize, m: usize) -> BANetwork {
+    fn generate_ba_network(n_nodes: usize, m0: usize, m: usize, seed: u64) -> BANetwork {
         assert!(m <= m0, "m must be ≤ m0");
-        let mut network = BANetwork::new(m0);
+        use rand::SeedableRng;
+        let rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let mut network = BANetwork::new(m0, rng);
 
         for _ in m0..n_nodes {
             network.add_node(m);
@@ -134,9 +138,9 @@ pub fn random_er_graph(nodes_address: Vec<String>, probability: f64) -> Graph<St
     graph
 }
 
-pub fn random_graph_with_ba_network(nodes_address: Vec<String>) -> Graph<String, ()> {
+pub fn random_graph_with_ba_network(nodes_address: Vec<String>, seed: u64) -> Graph<String, ()> {
     let node_number = nodes_address.len();
-    let ba_network = BANetwork::generate_ba_network(node_number, 3, 2);
+    let ba_network = BANetwork::generate_ba_network(node_number, 3, 2, seed);
     let adj = ba_network.adjacency;
 
     let mut graph = Graph::<String, ()>::new();
@@ -196,8 +200,8 @@ mod tests {
     use std::process::Command;
 
     #[test]
-    fn BANetwork() {
-        let ba_network = BANetwork::generate_ba_network(100, 3, 2);
+    fn ba_network() {
+        let ba_network = BANetwork::generate_ba_network(100, 3, 2, 42);
         let adj = ba_network.adjacency;
 
         let mut graph = Graph::<String, ()>::new();
@@ -217,9 +221,9 @@ mod tests {
     }
 
     #[test]
-    fn BANetwork_test() {
+    fn ba_network_test() {
         let num = 1000;
-        let ba_network = BANetwork::generate_ba_network(num, 3, 2);
+        let ba_network = BANetwork::generate_ba_network(num, 3, 2, 42);
         let adj = ba_network.adjacency;
 
         for (x, y) in adj.clone() {

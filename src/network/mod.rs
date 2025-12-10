@@ -35,6 +35,7 @@ pub async fn start_network(
     topology: TopologyType,
     gini: f64,
     transaction_fee: f64,
+    graph_seed: u64,
 ) {
     info!("Consensus Type is {}", consensus);
 
@@ -110,7 +111,7 @@ pub async fn start_network(
     //4. gen the network graph
     let graph = match topology {
         TopologyType::ER => graph::random_er_graph(nodes_address.clone(), 0.2),
-        TopologyType::BA => graph::random_graph_with_ba_network(nodes_address.clone()),
+        TopologyType::BA => graph::random_graph_with_ba_network(nodes_address.clone(), graph_seed),
     };
     info!("Generate network graph[{}]", topology);
     tokio::time::sleep(Duration::from_secs(3)).await;

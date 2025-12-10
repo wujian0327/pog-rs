@@ -69,6 +69,11 @@ struct Args {
     /// 每笔交易的手续费，设置为0表示禁用手续费
     #[clap(long, default_value = "0.0")]
     transaction_fee: f64,
+
+    /// 图拓扑生成种子 (Graph topology generation seed)
+    /// 用于固定网络拓扑结构，便于可重复实验
+    #[clap(long, default_value = "888")]
+    graph_seed: u64,
 }
 
 #[tokio::main]
@@ -94,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.topology,
         args.gini,
         args.transaction_fee,
+        args.graph_seed,
     )
     .await;
     Ok(())

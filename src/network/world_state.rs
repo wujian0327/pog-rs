@@ -60,7 +60,7 @@ impl WorldState {
         pow_difficulty: usize,
         pow_max_threads: usize,
     ) -> (Self, Sender<Message>, Receiver<Message>) {
-        let (sender, receiver) = tokio::sync::mpsc::channel(100);
+        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
         let slot_duration = Duration::from_secs(slot_duration_secs);
         let consensus_name = consensus_type.to_string();

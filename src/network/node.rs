@@ -8,6 +8,7 @@ use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
 use log::{debug, error, info, warn};
 use rand::Rng;
+use serde::de;
 use serde_json;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -72,7 +73,7 @@ impl Node {
         world_state_sender: Sender<Message>,
     ) -> Self {
         let wallet = Wallet::new();
-        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
         Node {
             index,
             epoch,
@@ -318,6 +319,9 @@ impl Node {
                         if let Err(e) = blockchain.add_block(block.clone()) {
                             match e {
                                 BlockChainError::DuplicateBlocksReceived => {
+                                    debug!("Node[{}] error: {}", self.index, e);
+                                }
+                                BlockChainError::IndexTooSmall => {
                                     debug!("Node[{}] error: {}", self.index, e);
                                 }
                                 BlockChainError::ParentHashMismatch => {

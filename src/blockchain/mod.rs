@@ -32,6 +32,9 @@ impl Blockchain {
     }
 
     pub fn add_block(&mut self, block: Block) -> Result<(), BlockChainError> {
+        if self.get_last_index() + 1 > block.header.index {
+            return Err(BlockChainError::IndexTooSmall);
+        }
         if !block.verify() {
             return Err(BlockChainError::InvalidBlock);
         }
@@ -159,6 +162,7 @@ pub enum BlockChainError {
     SlotError,
     DuplicateBlocksReceived,
     TransactionExists,
+    IndexTooSmall,
 }
 
 impl fmt::Display for BlockChainError {
@@ -186,6 +190,9 @@ impl fmt::Display for BlockChainError {
 
             BlockChainError::TransactionExists => {
                 write!(f, "Transaction exists")
+            }
+            BlockChainError::IndexTooSmall => {
+                write!(f, "Index Too Small Error")
             }
         }
     }

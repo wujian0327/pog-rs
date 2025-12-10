@@ -137,9 +137,10 @@ impl Consensus for PowConsensus {
 
         // 多线程 PoW 竞争：所有验证者并行计算，第一个找到结果的胜利
         let winner = Arc::new(Mutex::new(None::<Validator>));
+        let should_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut handles = vec![];
 
-        let max_attempts = 1000000u64;
+        let max_attempts = 100_000_000u64;
         let start_time = std::time::Instant::now();
         let slot_duration = self.slot_duration;
 
@@ -151,6 +152,7 @@ impl Consensus for PowConsensus {
             for validator in chunk {
                 let validator_clone = validator.clone();
                 let winner_clone = Arc::clone(&winner);
+                let should_stop_clone = Arc::clone(&should_stop);
                 let difficulty = self.difficulty;
                 let seed = combines_seed;
 
@@ -163,8 +165,8 @@ impl Consensus for PowConsensus {
 
                     // 开始 PoW 计算
                     for nonce in 0..max_attempts {
-                        // 检查是否已有获胜者，若有则提前退出
-                        if winner_clone.lock().unwrap().is_some() {
+                        // 检查是否应该停止（获胜者已产生或超时）
+                        if should_stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
                             return;
                         }
 
@@ -177,13 +179,17 @@ impl Consensus for PowConsensus {
                         // 验证是否满足难度要求
                         if Self::verify_pow(&hash_bytes, difficulty) {
                             // 当前验证者找到了结果，尝试设置为获胜者
-                            let mut winner_guard = winner_clone.lock().unwrap();
-                            if winner_guard.is_none() {
-                                *winner_guard = Some(validator_clone.clone());
-                                info!(
-                                    "PoW: Validator {} won with nonce {}",
-                                    validator_clone.address, nonce
-                                );
+                            if let Ok(mut winner_guard) = winner_clone.try_lock() {
+                                if winner_guard.is_none() {
+                                    *winner_guard = Some(validator_clone.clone());
+                                    info!(
+                                        "PoW: Validator {} won with nonce {}",
+                                        validator_clone.address, nonce
+                                    );
+                                    // 通知其他线程停止
+                                    should_stop_clone
+                                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                                }
                             }
                             return;
                         }
@@ -194,36 +200,62 @@ impl Consensus for PowConsensus {
             }
         }
 
-        // 等待所有线程完成或找到获胜者或超时
-        for handle in handles {
-            let elapsed = start_time.elapsed();
-            if elapsed >= slot_duration {
-                // 时间已超过 slot 时长，不再等待
-                let _ = handle.join();
+        // 等待线程完成或超时
+        let timeout_instant = start_time + slot_duration * 2;
+        loop {
+            let now = std::time::Instant::now();
+
+            // 检查是否有获胜者（使用 try_lock 避免主线程被阻塞）
+            if let Ok(guard) = winner.try_lock() {
+                if guard.is_some() {
+                    break;
+                }
+            }
+
+            // 检查是否超时
+            if now >= timeout_instant {
+                warn!(
+                    "PoW: Timeout waiting for threads after {:.2}s (slot_duration: {}s)",
+                    now.duration_since(start_time).as_secs_f64(),
+                    slot_duration.as_secs()
+                );
+                should_stop.store(true, std::sync::atomic::Ordering::Relaxed);
                 break;
             }
-            let _ = handle.join(); // 实际环境中应该使用 join_timeout
+
+            // 短暂休眠，避免忙轮询
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // 等待所有线程完成（设置了 should_stop 后应该很快就结束）
+        for handle in handles {
+            let _ = handle.join();
         }
 
         // 获取获胜者或使用 fallback
-        {
-            let winner_guard = winner.lock().unwrap();
-            match winner_guard.clone() {
-                Some(validator) => {
-                    info!("PoW proposer selected: {}", validator.address);
-                    Ok(validator)
-                }
-                None => {
-                    // 如果在规定时间内没有找到获胜者，随机选择一个验证者并降低难度
-                    let mut rng = rand::thread_rng();
-                    let index = rng.gen_range(0..validators.len());
-                    self.difficulty = self.difficulty.saturating_sub(1);
-                    warn!(
-                        "PoW: No winner found within slot time, randomly selecting validator: {}, difficulty reduced to {}",
-                        validators[index].address, self.difficulty
-                    );
-                    Ok(validators[index].clone())
-                }
+        let winner_result = {
+            if let Ok(winner_guard) = winner.try_lock() {
+                winner_guard.clone()
+            } else {
+                None
+            }
+        };
+
+        match winner_result {
+            Some(validator) => {
+                info!("PoW proposer selected: {}", validator.address);
+                Ok(validator)
+            }
+            None => {
+                // 如果在规定时间内没有找到获胜者，随机选择一个验证者并降低难度
+                let mut rng = rand::thread_rng();
+                let index = rng.gen_range(0..validators.len());
+                self.difficulty = self.difficulty.saturating_sub(1);
+                warn!(
+                    "PoW: No winner found within slot time, randomly selecting validator: {}, difficulty reduced to {}",
+                    validators[index].address, self.difficulty
+                );
+                Ok(validators[index].clone())
             }
         }
     }
