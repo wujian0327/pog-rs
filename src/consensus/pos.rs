@@ -6,11 +6,13 @@ use crate::consensus::{Consensus, Validator, ValidatorError};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 
-pub struct PosConsensus;
+pub struct PosConsensus {
+    base_reward: f64,
+}
 
 impl PosConsensus {
-    pub fn new() -> Self {
-        PosConsensus
+    pub fn new(base_reward: f64) -> Self {
+        PosConsensus { base_reward }
     }
 
     fn select(
@@ -66,7 +68,7 @@ impl Consensus for PosConsensus {
             .iter_mut()
             .find(|v| v.address == block.header.miner)
         {
-            let base_reward = 1.0; // 固定奖励
+            let base_reward = self.base_reward;
             let tx_fees: f64 = block.body.transactions.iter().map(|tx| tx.fee).sum();
             let total_reward = base_reward + tx_fees;
             validator.stake += total_reward;

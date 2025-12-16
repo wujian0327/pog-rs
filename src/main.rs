@@ -74,6 +74,10 @@ struct Args {
     /// 用于固定网络拓扑结构，便于可重复实验
     #[clap(long, default_value = "888")]
     graph_seed: u64,
+
+    /// 固定奖励 (Base reward per block for all consensus)
+    #[clap(long, default_value = "1.0")]
+    base_reward: f64,
 }
 
 #[tokio::main]
@@ -100,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.gini,
         args.transaction_fee,
         args.graph_seed,
+        args.base_reward,
     )
     .await;
     Ok(())

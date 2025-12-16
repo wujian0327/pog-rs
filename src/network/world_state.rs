@@ -1,5 +1,5 @@
 use crate::blockchain::block::Block;
-use crate::blockchain::Blockchain;
+use crate::blockchain::{BlockChainError, Blockchain};
 use crate::consensus::pog::PogConsensus;
 use crate::consensus::pos::PosConsensus;
 use crate::consensus::pow::PowConsensus;
@@ -38,6 +38,10 @@ pub struct WorldState {
     slot_duration: Duration,
     slot_per_epoch: u64,
     pub nodes_index: HashMap<String, u32>,
+    // 出块成功率统计
+    pub block_production_success: usize, // 成功出块数
+    pub block_production_failed: usize,  // 失败出块数
+    pub base_reward: f64,                // 所有共识的固定奖励
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -59,18 +63,20 @@ impl WorldState {
         slot_per_epoch: u64,
         pow_difficulty: usize,
         pow_max_threads: usize,
+        base_reward: f64,
     ) -> (Self, Sender<Message>, Receiver<Message>) {
-        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
+        let (sender, receiver) = tokio::sync::mpsc::channel(4096);
         let nodes_sender: HashMap<String, Sender<Message>> = HashMap::new();
         let slot_duration = Duration::from_secs(slot_duration_secs);
         let consensus_name = consensus_type.to_string();
         let consensus: Box<dyn Consensus> = match consensus_type {
-            ConsensusType::POG => Box::new(PogConsensus::new(0)),
-            ConsensusType::POS => Box::new(PosConsensus::new()),
+            ConsensusType::POG => Box::new(PogConsensus::new(0, base_reward)),
+            ConsensusType::POS => Box::new(PosConsensus::new(base_reward)),
             ConsensusType::POW => Box::new(PowConsensus::new(
                 pow_difficulty,
                 pow_max_threads,
                 slot_duration,
+                base_reward,
             )),
         };
         // Initialize metrics files - delete old file and create new one
@@ -101,6 +107,9 @@ impl WorldState {
                 slot_duration,
                 slot_per_epoch,
                 nodes_index: HashMap::new(),
+                block_production_success: 0,
+                block_production_failed: 0,
+                base_reward,
             },
             sender,
             receiver,
@@ -286,6 +295,8 @@ impl WorldState {
             consensus_type: self.consensus.name().to_string(),
             consensus_state,
             tx_packing_delay_stats,
+            block_production_success: self.block_production_success,
+            block_production_failed: self.block_production_failed,
         };
 
         // Write to CSV
@@ -380,20 +391,39 @@ impl WorldState {
                             };
 
                             {
-                                let shared_self = shared_self.write().await;
-                                if let Err(e) = shared_self
-                                    .blockchain
-                                    .write()
-                                    .await
-                                    .add_block(block.clone())
-                                {
+                                let mut shared_self = shared_self.write().await;
+                                let add_block_result = {
+                                    shared_self
+                                        .blockchain
+                                        .write()
+                                        .await
+                                        .add_block(block.clone())
+                                };
+
+                                if let Err(e) = add_block_result {
                                     match e {
+                                        BlockChainError::ParentHashMismatch => {
+                                            warn!(
+                                                "World State: Parent hash mismatch at index {}",
+                                                block.header.index
+                                            );
+                                        }
+                                        BlockChainError::IndexTooSmall => {
+                                            warn!(
+                                                "World State: Received block at index {}, index too small",
+                                                block.header.index
+                                            );
+                                        }
                                         _ => {
-                                            error!("World State Error: {}", e);
+                                            error!("World State Add Block Error: {}", e);
                                         }
                                     }
+                                    shared_self.block_production_failed += 1;
                                     continue;
                                 }
+
+                                // 块添加成功，更新出块成功计数
+                                shared_self.block_production_success += 1;
 
                                 // 块添加成功后，立即分配奖励
                                 {
@@ -428,6 +458,27 @@ impl WorldState {
                                 }
                             }
                             debug!("World State add block successfully");
+                        }
+                        MessageType::BlockProductionFailed => {
+                            // 处理出块失败事件
+                            if let Ok(json_str) = String::from_utf8(msg.data.clone()) {
+                                if let Ok(payload) =
+                                    serde_json::from_str::<serde_json::Value>(&json_str)
+                                {
+                                    if let (Some(node_index), Some(slot), Some(reason)) = (
+                                        payload.get("node_index").and_then(|v| v.as_u64()),
+                                        payload.get("slot").and_then(|v| v.as_u64()),
+                                        payload.get("reason").and_then(|v| v.as_str()),
+                                    ) {
+                                        let mut shared_self = shared_self.write().await;
+                                        shared_self.block_production_failed += 1;
+                                        debug!(
+                                            "World State: Block production failed at slot {}: Node[{}] (reason: {})",
+                                            slot, node_index, reason
+                                        );
+                                    }
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -520,6 +571,7 @@ mod tests {
             5,
             20,
             8,
+            0.0,
         );
         tokio::spawn(async move {
             world.run(world_receiver).await;
@@ -543,6 +595,7 @@ mod tests {
             5,
             20,
             8,
+            0.0,
         );
 
         let validators = world.validators.clone();

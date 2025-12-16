@@ -19,16 +19,23 @@ pub struct PowConsensus {
     blocks_in_epoch: usize,
     max_threads: usize,
     slot_duration: Duration,
+    base_reward: f64,
 }
 
 impl PowConsensus {
     /// 创建新的 PoW 共识实例
-    pub fn new(initial_difficulty: usize, max_threads: usize, slot_duration: Duration) -> Self {
+    pub fn new(
+        initial_difficulty: usize,
+        max_threads: usize,
+        slot_duration: Duration,
+        base_reward: f64,
+    ) -> Self {
         PowConsensus {
             difficulty: initial_difficulty,
             blocks_in_epoch: 0,
             max_threads,
             slot_duration,
+            base_reward,
         }
     }
 
@@ -284,7 +291,7 @@ impl Consensus for PowConsensus {
             .iter_mut()
             .find(|v| v.address == block.header.miner)
         {
-            let base_reward = 1.0; // 固定奖励
+            let base_reward = self.base_reward;
             let tx_fees: f64 = block.body.transactions.iter().map(|tx| tx.fee).sum();
             let total_reward = base_reward + tx_fees;
             validator.stake += total_reward;

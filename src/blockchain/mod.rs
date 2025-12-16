@@ -12,7 +12,6 @@ use tokio::io::AsyncWriteExt;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Blockchain {
     pub blocks: Vec<Block>,
-    pub transactions_hash_set: HashSet<String>,
 }
 
 impl Blockchain {
@@ -23,7 +22,6 @@ impl Blockchain {
         }
         Blockchain {
             blocks: vec![genesis_block],
-            transactions_hash_set: set,
         }
     }
 
@@ -63,14 +61,18 @@ impl Blockchain {
             }
         }
         self.blocks.push(block.clone());
-        for x in block.body.transactions {
-            self.transactions_hash_set.insert(x.hash.to_string());
-        }
         Ok(())
     }
 
     pub fn exist_transaction(&self, hash: String) -> bool {
-        self.transactions_hash_set.contains(&hash)
+        for b in &self.blocks {
+            for t in &b.body.transactions {
+                if t.hash == hash {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn get_last_block(&self) -> Block {

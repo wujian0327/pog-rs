@@ -8,7 +8,6 @@ use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
 use log::{debug, error, info, warn};
 use rand::Rng;
-use serde::de;
 use serde_json;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -291,9 +290,23 @@ impl Node {
                 match msg.msg_type {
                     MessageType::GenerateBlock => {
                         warn!(
-                            "Node[{}] missed block generation due to being offline",
-                            self.index
+                            "Node[{}] missed block generation due to being offline at slot {}",
+                            self.index, self.slot
                         );
+                        // 报告出块失败事件到 world_state
+                        let world_state_sender = self.world_state_sender.clone();
+                        let node_index = self.index;
+                        let node_slot = self.slot;
+                        tokio::spawn(async move {
+                            world_state_sender
+                                .send(Message::new_block_production_failed_msg(
+                                    node_index,
+                                    node_slot,
+                                    "node_offline".to_string(),
+                                ))
+                                .await
+                                .unwrap();
+                        });
                     }
                     _ => {}
                 }
@@ -319,19 +332,21 @@ impl Node {
                         if let Err(e) = blockchain.add_block(block.clone()) {
                             match e {
                                 BlockChainError::DuplicateBlocksReceived => {
-                                    debug!("Node[{}] error: {}", self.index, e);
+                                    debug!("Node[{}] add block error: {}", self.index, e);
                                 }
                                 BlockChainError::IndexTooSmall => {
-                                    debug!("Node[{}] error: {}", self.index, e);
+                                    debug!("Node[{}] add block error: {}", self.index, e);
+                                }
+                                BlockChainError::TransactionExists => {
+                                    debug!("Node[{}] add block error: {}", self.index, e);
                                 }
                                 BlockChainError::ParentHashMismatch => {
                                     warn!("Node[{}] error: {}, trying Block Sync", self.index, e);
                                     // 先释放写锁，再向邻居请求块同步（避免死锁）
-                                    let last_block_index = blockchain.blocks.len() as u64 - 1;
+                                    let last_block_index = blockchain.get_last_index();
                                     drop(blockchain);
 
-                                    // 只有在没有同步进行时才请求新的同步
-                                    if !self.sync_in_progress && !self.neighbors.is_empty() {
+                                    if !self.neighbors.is_empty() {
                                         self.sync_in_progress = true;
                                         for neighbor in self.neighbors.clone() {
                                             let self_address = self.get_address();
@@ -349,7 +364,7 @@ impl Node {
                                     }
                                 }
                                 _ => {
-                                    error!("Node[{}] error: {}", self.index, e);
+                                    error!("Node[{}] add block error: {}", self.index, e);
                                 }
                             }
                             continue;
@@ -523,9 +538,10 @@ impl Node {
                     // 同步过程中不能出块
                     if self.sync_in_progress {
                         warn!(
-                            "Node[{}] skipping block generation due to sync in progress",
-                            self.index
+                            "Node[{}] skipping block generation due to sync in progress at slot {}",
+                            self.index, self.slot
                         );
+
                         continue;
                     }
 
@@ -541,7 +557,11 @@ impl Node {
                     let block = match self.generate_block(self.epoch, self.slot).await {
                         Ok(b) => b,
                         Err(e) => {
-                            error!("Node[{}] generate block failed:{}", self.index, e);
+                            error!(
+                                "Node[{}] generate block failed: {} at slot {}",
+                                self.index, e, self.slot
+                            );
+
                             continue;
                         }
                     };
@@ -825,7 +845,7 @@ impl Node {
                                 for neighbor in self.neighbors.clone() {
                                     let self_address = self.get_address();
                                     tokio::spawn(async move {
-                                        info!(
+                                        debug!(
                                             "Node[{}] requests block sync from Node[{}], last block index: {}",
                                             self_address, neighbor.address, last_block_index
                                         );
@@ -875,6 +895,13 @@ impl Node {
                     self.blockchain.read().await.write_to_file_all_json().await;
                 }
                 MessageType::RequestBlockSync => {
+                    if self.sync_in_progress {
+                        debug!(
+                            "Node[{}] is syncing, ignoring new block sync request",
+                            self.index
+                        );
+                        continue;
+                    }
                     // 接收块同步请求，返回从 index+1 开始到最新的所有块
                     let requested_index = match msg.data.len() {
                         8 => u64::from_le_bytes([
@@ -898,7 +925,7 @@ impl Node {
 
                     let blockchain_read = self.blockchain.read().await;
                     let total_blocks = blockchain_read.blocks.len();
-                    let start_index = (requested_index + 1) as usize;
+                    let start_index = requested_index as usize;
 
                     let sync_blocks = if start_index < total_blocks {
                         blockchain_read.blocks[start_index..].to_vec()
@@ -992,10 +1019,11 @@ impl Node {
                                     "Node[{}] target block index {} not found in sync response",
                                     self.index, target_index
                                 );
-                                drop(blockchain);
-                                continue;
+                                self.sync_in_progress = false;
                             }
                             Some(start_idx) => {
+                                // 判断是否成功
+                                let mut success = false;
                                 // 从找到的位置开始同步
                                 for (sync_idx, sync_block) in
                                     sync_blocks[start_idx..].iter().enumerate()
@@ -1022,13 +1050,40 @@ impl Node {
                                                 sync_block.header.index,
                                                 sync_block.header.hash
                                             );
+                                            success = true;
                                         }
                                         Err(e) => match e {
                                             BlockChainError::DuplicateBlocksReceived => {
-                                                debug!(
+                                                warn!(
                                                     "Node[{}] block #{} already exists",
                                                     self.index, sync_block.header.index
                                                 );
+                                            }
+                                            BlockChainError::ParentHashMismatch
+                                            | BlockChainError::TransactionExists => {
+                                                //删除最新的一个块，再同步
+                                                if blockchain.blocks.len() == 1 {
+                                                    error!(
+                                                        "Node[{}] no blocks to remove during sync error handling",
+                                                        self.index
+                                                    );
+                                                } else {
+                                                    if let Some(removed_block) =
+                                                        blockchain.blocks.pop()
+                                                    {
+                                                        warn!(
+                                                        "Node[{}] removed block #{} due to {} during sync",
+                                                        self.index, e, removed_block.header.index
+                                                    );
+                                                    } else {
+                                                        error!(
+                                                        "Node[{}] no blocks to remove during sync error handling",
+                                                        self.index
+                                                    );
+                                                        break;
+                                                    }
+                                                }
+                                                break;
                                             }
                                             _ => {
                                                 error!(
@@ -1040,16 +1095,17 @@ impl Node {
                                         },
                                     }
                                 }
-
-                                let synced_count = sync_blocks.len() - start_idx;
-                                info!(
-                                    "Node[{}] completed block sync: synced {} blocks ",
-                                    self.index, synced_count
-                                );
+                                if success {
+                                    let synced_count = sync_blocks.len() - start_idx;
+                                    info!(
+                                        "Node[{}] completed block sync: synced {} blocks ",
+                                        self.index, synced_count
+                                    );
+                                    self.sync_in_progress = false;
+                                }
                             }
                         }
                     }
-                    self.sync_in_progress = false;
                 }
                 _ => {}
             }

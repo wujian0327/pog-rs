@@ -130,6 +130,19 @@ impl Message {
             from: "".to_string(),
         }
     }
+
+    pub fn new_block_production_failed_msg(node_index: u32, slot: u64, reason: String) -> Message {
+        let payload = serde_json::json!({
+            "node_index": node_index,
+            "slot": slot,
+            "reason": reason
+        });
+        Message {
+            msg_type: MessageType::BlockProductionFailed,
+            data: payload.to_string().into_bytes(),
+            from: "".to_string(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -148,6 +161,7 @@ pub enum MessageType {
     ResponseBlockSync,
     UpdateValidatorStake,  // Node 通知 WorldState 更新 Validator 的 stake
     UpdateNodeBalance,     // WorldState 通知 Node 更新其 balance
+    BlockProductionFailed, // Node 报告出块失败事件
 }
 
 impl Display for MessageType {
@@ -197,6 +211,9 @@ impl Display for MessageType {
             }
             MessageType::UpdateNodeBalance => {
                 write!(f, "UpdateNodeBalance")
+            }
+            MessageType::BlockProductionFailed => {
+                write!(f, "BlockProductionFailed")
             }
         }
     }

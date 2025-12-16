@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 pub struct PogConsensus {
     ntd: usize,
+    base_reward: f64,
     // Temporal smoothing state: Score(n,t) for each node
     score_history: HashMap<String, f64>,
     // Parameters for contribution calculation
@@ -18,9 +19,10 @@ pub struct PogConsensus {
 }
 
 impl PogConsensus {
-    pub fn new(initial_ntd: usize) -> Self {
+    pub fn new(initial_ntd: usize, base_reward: f64) -> Self {
         PogConsensus {
             ntd: initial_ntd,
+            base_reward,
             score_history: HashMap::new(),
             alpha: 0.8,  // EMA factor: smaller alpha = longer memory
             k_sat: 1.0,  // Saturation scale
@@ -272,7 +274,7 @@ impl Consensus for PogConsensus {
         // 第1层：矿工直接获得交易费的一部分
         // 第2层：剩余费用按网络贡献（虚拟股份）分配给所有验证者
 
-        let block_reward = 1.0;
+        let block_reward = self.base_reward;
         // 计算本块总费用
         let total_fees: f64 = block.body.transactions.iter().map(|tx| tx.fee).sum();
 
@@ -423,7 +425,7 @@ mod tests {
         let miner_v = Validator::new(miner.address, 4.0);
         let validators = vec![v1, v2, v3, miner_v];
 
-        let mut pog = PogConsensus::new(3);
+        let mut pog = PogConsensus::new(3, 1.0);
 
         // Test with pure PoS (omega = 0)
         pog.set_omega(0.0);

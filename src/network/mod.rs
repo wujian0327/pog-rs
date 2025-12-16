@@ -36,6 +36,7 @@ pub async fn start_network(
     gini: f64,
     transaction_fee: f64,
     graph_seed: u64,
+    base_reward: f64,
 ) {
     info!("Consensus Type is {}", consensus);
 
@@ -53,6 +54,7 @@ pub async fn start_network(
         slot_per_epoch,
         pow_difficulty,
         pow_max_threads,
+        base_reward,
     );
     info!("Generate world state");
 

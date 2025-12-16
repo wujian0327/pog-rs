@@ -17,6 +17,8 @@ pub struct SlotMetrics {
     pub consensus_type: String,
     pub consensus_state: String, // e.g., "pog(ntd=3)", "pos"
     pub tx_packing_delay_stats: TxPackingDelayStats, // 交易打包延迟统计
+    pub block_production_success: usize, // 成功出块数
+    pub block_production_failed: usize, // 失败出块数
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,13 +38,13 @@ impl SlotMetrics {
     pub fn to_csv_header() -> String {
         "epoch,slot,miner,proposer_stake,timestamp,block_hash,tx_count,throughput,avg_path_length,\
          min_path_length,max_path_length,median_path_length,stake_concentration,\
-         gini_coefficient,consensus_type,consensus_state,avg_tx_delay_ms"
+         gini_coefficient,consensus_type,consensus_state,avg_tx_delay_ms,block_production_success,block_production_failed"
             .to_string()
     }
 
     pub fn to_csv_row(&self) -> String {
         format!(
-            "{},{},{},{:.6},{},{},{},{:.2},{:.2},{},{},{},{:.6},{:.6},{},{},{:.2}",
+            "{},{},{},{:.6},{},{},{},{:.2},{:.2},{},{},{},{:.6},{:.6},{},{},{:.2},{},{}",
             self.epoch,
             self.slot,
             self.miner,
@@ -60,6 +62,8 @@ impl SlotMetrics {
             self.consensus_type,
             self.consensus_state,
             self.tx_packing_delay_stats.avg_delay_ms,
+            self.block_production_success,
+            self.block_production_failed,
         )
     }
 }
