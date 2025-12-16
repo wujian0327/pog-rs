@@ -902,6 +902,26 @@ impl Node {
                         );
                         continue;
                     }
+                    if msg.from == "world_state" {
+                        info!(
+                            "Node[{}] received RequestBlockSync from world_state",
+                            self.index
+                        );
+                        let blockchain_read = self.blockchain.read().await;
+                        let sync_blocks = blockchain_read.blocks.clone();
+                        let self_address = self.get_address();
+                        let world_state_sender = self.world_state_sender.clone();
+                        tokio::spawn(async move {
+                            world_state_sender
+                                .send(Message::new_response_block_sync_msg(
+                                    sync_blocks,
+                                    self_address,
+                                ))
+                                .await
+                                .unwrap();
+                        });
+                        continue;
+                    }
                     // 接收块同步请求，返回从 index+1 开始到最新的所有块
                     let requested_index = match msg.data.len() {
                         8 => u64::from_le_bytes([

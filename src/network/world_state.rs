@@ -403,15 +403,35 @@ impl WorldState {
                                 if let Err(e) = add_block_result {
                                     match e {
                                         BlockChainError::ParentHashMismatch => {
-                                            warn!(
-                                                "World State: Parent hash mismatch at index {}",
+                                            error!(
+                                                "World State: Parent hash mismatch at index {}, there may be a fork",
                                                 block.header.index
                                             );
+                                            // 出现分叉，显式找到 index==0 的节点请求全链
+                                            if let Some((addr, _)) = shared_self
+                                                .nodes_index
+                                                .iter()
+                                                .find(|(_, &idx)| idx == 0)
+                                            {
+                                                if let Some(sender) =
+                                                    shared_self.nodes_sender.get(addr)
+                                                {
+                                                    warn!(
+                                                        "World State: Requesting full blockchain from Node[0] due to fork"
+                                                    );
+                                                    let _ = sender.try_send(
+                                                        Message::new_request_block_sync_msg(
+                                                            0,
+                                                            "world_state".to_string(),
+                                                        ),
+                                                    );
+                                                }
+                                            }
                                         }
                                         BlockChainError::IndexTooSmall => {
                                             warn!(
-                                                "World State: Received block at index {}, index too small",
-                                                block.header.index
+                                                "World State: Received block at index {}, index too small, current index is {}",
+                                                block.header.index, shared_self.blockchain.read().await.get_last_index()
                                             );
                                         }
                                         _ => {
@@ -475,6 +495,82 @@ impl WorldState {
                                         debug!(
                                             "World State: Block production failed at slot {}: Node[{}] (reason: {})",
                                             slot, node_index, reason
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        MessageType::ResponseBlockSync => {
+                            //处理同步逻辑
+                            let blocks_json = match String::from_utf8(msg.data) {
+                                Ok(s) => s,
+                                Err(_e) => {
+                                    continue;
+                                }
+                            };
+
+                            let sync_blocks: Vec<Block> = match serde_json::from_str(&blocks_json) {
+                                Ok(blocks) => blocks,
+                                Err(_e) => {
+                                    continue;
+                                }
+                            };
+                            if sync_blocks.is_empty() {
+                                continue;
+                            }
+                            // 从第一个区块开始对比，找到分叉点后替换本地区块链
+                            let mut shared_self = shared_self.write().await;
+                            let mut local_chain = shared_self.blockchain.write().await;
+
+                            let local_len = local_chain.blocks.len();
+                            let sync_len = sync_blocks.len();
+                            let min_len = local_len.min(sync_len);
+
+                            // 寻找第一个不同的块
+                            let mut divergence_idx = None;
+                            for i in 0..min_len {
+                                if local_chain.blocks[i].header.hash != sync_blocks[i].header.hash {
+                                    divergence_idx = Some(i);
+                                    break;
+                                }
+                            }
+
+                            match divergence_idx {
+                                Some(idx) => {
+                                    // 截断本地链到分叉点，然后用同步链替换后续部分
+                                    local_chain.blocks.truncate(idx);
+                                    local_chain
+                                        .blocks
+                                        .extend(sync_blocks[idx..].iter().cloned());
+                                    info!(
+                                        "World State: chain diverged at #{}, replaced from peer (local_len={} -> sync_len={})",
+                                        idx,
+                                        local_len,
+                                        sync_len
+                                    );
+                                }
+                                None => {
+                                    if sync_len > local_len {
+                                        // 本地是前缀，直接追加缺失部分
+                                        local_chain
+                                            .blocks
+                                            .extend(sync_blocks[local_len..].iter().cloned());
+                                        info!(
+                                            "World State: appended {} blocks (local_len={} -> sync_len={})",
+                                            sync_len - local_len,
+                                            local_len,
+                                            sync_len
+                                        );
+                                    } else if sync_len == local_len {
+                                        debug!(
+                                            "World State: chains are identical (len={})",
+                                            local_len
+                                        );
+                                    } else {
+                                        warn!(
+                                            "World State: peer chain shorter (peer_len={} < local_len={}), skip",
+                                            sync_len,
+                                            local_len
                                         );
                                     }
                                 }
