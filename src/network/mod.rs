@@ -22,7 +22,7 @@ pub mod world_state;
 
 pub async fn start_network(
     node_num: u32,
-    malicious_node_num: u32,
+    sybil_node_num: u32,
     fake_node_num: u32,
     unstable_node_num: u32,
     offline_probability: f64,
@@ -59,7 +59,7 @@ pub async fn start_network(
     info!("Generate world state");
 
     //3. nodes
-    let total_nodes = node_num + malicious_node_num + unstable_node_num;
+    let total_nodes = node_num + sybil_node_num + unstable_node_num;
     let mut node_map: HashMap<String, Node> = (0..total_nodes)
         .map(|i| {
             if i < node_num {
@@ -68,7 +68,7 @@ pub async fn start_network(
                 node.set_transaction_fee(transaction_fee);
                 node.simple_print();
                 (node.get_address(), node)
-            } else if i < node_num + malicious_node_num {
+            } else if i < node_num + sybil_node_num {
                 // Malicious nodes with sybil
                 let mut node = Node::new_with_sybil_nodes(
                     i,
@@ -106,8 +106,8 @@ pub async fn start_network(
 
     let nodes_address: Vec<String> = node_map.keys().cloned().collect();
     info!(
-        "Generate {} honest nodes, {} malicious nodes, {} unstable nodes",
-        node_num, malicious_node_num, unstable_node_num
+        "Generate {} honest nodes, {} sybil nodes, {} unstable nodes",
+        node_num, sybil_node_num, unstable_node_num
     );
 
     //4. gen the network graph
@@ -160,7 +160,7 @@ pub async fn start_network(
     node_map
         .iter()
         .for_each(|(_address, node)| match node.node_type {
-            NodeType::Malicious => {
+            NodeType::Sybil => {
                 // sybil的消息,由主节点控制
                 node.sybil_nodes.iter().for_each(|sybil| {
                     world
@@ -197,7 +197,7 @@ pub async fn start_network(
     };
 
     // Create address -> stake mapping
-    let mut stake_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut stake_map: HashMap<String, f64> = HashMap::new();
     for (i, address) in nodes_address.iter().enumerate() {
         if i < stake_values.len() {
             stake_map.insert(address.clone(), stake_values[i]);

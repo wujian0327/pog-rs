@@ -12,12 +12,12 @@ use std::fs::File;
 #[clap(version = "1.0", author = "wujian", about = "POG协议模拟")]
 struct Args {
     /// 节点个数(Node number)
-    #[clap(short, long, default_value = "50")]
+    #[clap(short, long, default_value = "20")]
     node_num: u32,
 
     /// 恶意节点个数(Sybil node)(Malicious node num)
     #[clap(short, long, default_value = "0")]
-    malicious_node_num: u32,
+    sybil_node_num: u32,
 
     /// 恶意节点伪造身份的数量(Fake identities num)
     /// only malicious_node_num > 0 usefully
@@ -37,7 +37,7 @@ struct Args {
     trans_num: u32,
 
     /// 时隙持续时间（秒）(Slot duration in seconds)
-    #[clap(long, default_value = "5")]
+    #[clap(long, default_value = "3")]
     slot_duration: u64,
 
     /// 每个epoch的时隙数量 (Slots per epoch)
@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     network::start_network(
         args.node_num,
-        args.malicious_node_num,
+        args.sybil_node_num,
         args.fake_node_num,
         args.unstable_node_num,
         args.offline_probability,

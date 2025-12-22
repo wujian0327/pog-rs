@@ -41,7 +41,7 @@ pub struct Node {
 pub enum NodeType {
     Honest,
     Selfish,
-    Malicious,
+    Sybil,
     Unstable, // 会随机下线的节点
 }
 
@@ -50,7 +50,7 @@ impl Display for NodeType {
         match *self {
             NodeType::Honest => write!(f, "Honest"),
             NodeType::Selfish => write!(f, "Selfish"),
-            NodeType::Malicious => write!(f, "Malicious"),
+            NodeType::Sybil => write!(f, "Sybil"),
             NodeType::Unstable => write!(f, "Unstable"),
         }
     }
@@ -143,11 +143,11 @@ impl Node {
                 blockchain.clone(),
                 world_state_sender.clone(),
             );
-            n.set_node_type(NodeType::Malicious);
+            n.set_node_type(NodeType::Sybil);
             sybil_nodes.push(n);
         }
         let wallet = Wallet::new();
-        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
         Node {
             index,
             epoch,
@@ -159,7 +159,7 @@ impl Node {
             transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
             neighbors: Vec::new(),
             world_state_sender,
-            node_type: NodeType::Malicious,
+            node_type: NodeType::Sybil,
             sybil_nodes,
             is_online: true,
             offline_until_epoch: None,
@@ -467,7 +467,7 @@ impl Node {
                                 continue;
                             }
                         }
-                        NodeType::Malicious => {
+                        NodeType::Sybil => {
                             //Sybil,伪造路径,再广播
                             let mut wallet = self.wallet.clone();
                             self.sybil_nodes.iter().for_each(|s| {
@@ -644,7 +644,7 @@ impl Node {
                         transactions_cache.push(transaction_paths.clone())
                     }
                     match self.node_type {
-                        NodeType::Malicious => {
+                        NodeType::Sybil => {
                             //Sybil,伪造路径,再广播
                             let mut wallet = self.wallet.clone();
                             self.sybil_nodes.iter().for_each(|s| {
@@ -773,7 +773,7 @@ impl Node {
                                 .await
                                 .unwrap();
                         }
-                        NodeType::Malicious => {
+                        NodeType::Sybil => {
                             // For malicious nodes with sybil, divide stake among all sybil identities
                             let sybil_num = self.sybil_nodes.len();
                             let stake = my_stake / (sybil_num + 1) as f64;
