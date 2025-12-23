@@ -167,7 +167,7 @@ def plot_sybil_long_range_defense():
                  fontsize=16, color='#d62728', fontweight='bold')
 
     # 标题
-    plt.title('Sybil Resistance', fontsize=22, fontweight='bold', pad=20)
+    plt.title('Sybil Resistance', fontsize=22, fontweight='bold')
     
     # 图例
     lines = [line1, line2, line3]
