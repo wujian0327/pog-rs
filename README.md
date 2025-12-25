@@ -23,5 +23,5 @@ cargo run --release -- -n 100 -t 10 -c pos
 ```
 
 ```
-cargo  test test_stake_real_c_total_both_increase --release -- --nocapture
+cargo run  --release -- -n 50 -t 50 -c pog -g 0.6   --base-reward 1.0 --slot-duration 3 --transaction-fee 0.00001  
 ```

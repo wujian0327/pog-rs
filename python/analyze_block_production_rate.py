@@ -29,7 +29,7 @@ def create_block_production_rate_figure():
     offline_rates, pog_rates, pos_rates = generate_block_production_data()
     
     # 创建图表
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     # 绘制三条曲线
     ax.plot(offline_rates, pog_rates, 
@@ -54,7 +54,7 @@ def create_block_production_rate_figure():
     # 设置标签字体大小
     ax.set_xlabel('Offline probability per node per epoch (%)', fontsize=22, fontweight='normal')
     ax.set_ylabel('Block production success rate (%)', fontsize=22, fontweight='normal')
-    ax.set_title('Impact of offline probability on block production', fontsize=22, fontweight='normal', pad=20)
+    # ax.set_title('Impact of offline probability on block production', fontsize=22, fontweight='normal', pad=20)
     
     # 设置坐标轴刻度字体大小
     ax.tick_params(axis='x', labelsize=18)
@@ -62,10 +62,10 @@ def create_block_production_rate_figure():
     
     # 设置坐标轴范围
     ax.set_xlim(-2, 52)
-    ax.set_ylim(30, 110)
+    ax.set_ylim(30, 100)
     
     # 设置图例
-    ax.legend(fontsize=22, loc='upper right', frameon=True, fancybox=False, edgecolor='black')
+    ax.legend(fontsize=26, loc='best', frameon=True, fancybox=False, edgecolor='black')
     
     plt.tight_layout()
     project_root = get_project_root()

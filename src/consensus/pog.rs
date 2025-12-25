@@ -24,10 +24,10 @@ impl PogConsensus {
             ntd: initial_ntd,
             base_reward,
             score_history: HashMap::new(),
-            alpha: 0.8,  // EMA factor: smaller alpha = longer memory
+            alpha: 0.5,  // EMA factor: smaller alpha = longer memory
             k_sat: 1.0,  // Saturation scale
             k_base: 1.0, // Saturation base
-            omega: 1.0,  // Start with pure PoS (omega=0), gradually increase to 1
+            omega: 0.0,  // Start with pure PoS (omega=0), gradually increase to 1
         }
     }
 

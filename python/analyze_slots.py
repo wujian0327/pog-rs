@@ -4,20 +4,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 from scipy import stats
+from matplotlib.ticker import MaxNLocator
 
 # 设置科研风格
-plt.style.use('seaborn-v0_8-darkgrid')
+plt.style.use('seaborn-v0_8-whitegrid')
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.dpi'] = 100
 plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 11
-plt.rcParams['axes.titlesize'] = 12
-plt.rcParams['xtick.labelsize'] = 9
-plt.rcParams['ytick.labelsize'] = 9
-plt.rcParams['legend.fontsize'] = 10
-plt.rcParams['lines.linewidth'] = 2.0
+plt.rcParams['font.size'] = 28
+plt.rcParams['axes.labelsize'] = 28
+plt.rcParams['axes.titlesize'] = 28
+plt.rcParams['xtick.labelsize'] = 28
+plt.rcParams['ytick.labelsize'] = 28
+plt.rcParams['legend.fontsize'] = 28
+plt.rcParams['lines.linewidth'] = 3.0
+plt.rcParams['lines.markersize'] = 10.0
 plt.rcParams['patch.linewidth'] = 1.2
 plt.rcParams['axes.grid'] = True
 plt.rcParams['grid.alpha'] = 0.4
@@ -44,6 +46,9 @@ def read_metrics_csv(consensus_type):
     
     try:
         df = pd.read_csv(csv_file)
+        # 截取前250个数据点
+        if len(df) > 250:
+            df = df.iloc[:250]
         print(f"成功读取 {consensus_type} 的数据: {len(df)} 条记录")
         return df
     except Exception as e:
@@ -59,7 +64,7 @@ def create_gini_line_figure(dataframes_dict):
         print("没有有效的数据")
         return
     
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
     linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
@@ -69,24 +74,24 @@ def create_gini_line_figure(dataframes_dict):
         if df is not None and len(df) > 0:
             gini = df['gini_coefficient'].values
             
-            # 计算累计平均值
-            cumulative_mean = np.cumsum(gini) / np.arange(1, len(gini) + 1)
+            # 直接绘制 Gini 系数
+            # cumulative_mean = np.cumsum(gini) / np.arange(1, len(gini) + 1)
             
-            ax.plot(df.index, cumulative_mean, 
+            ax.plot(df.index, gini, 
                    label=f'{ct.upper()}',
                    color=colors.get(ct, '#000000'), 
-                   linewidth=2.2, 
                    linestyle=linestyles.get(ct, '-'),
                    marker=markers.get(ct), 
-                   markersize=6,
                    markevery=max(1, len(df) // 8),
                    alpha=0.9)
     
-    ax.set_xlabel('Slot Index', fontsize=22, fontweight='bold')
-    ax.set_ylabel('Gini Coefficient', fontsize=22, fontweight='bold')
-    ax.set_title('Gini Coefficient Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=18)
-    ax.legend(fontsize=24, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
+    ax.set_xlabel('Slot',  fontweight='bold')
+    ax.set_ylabel('Gini Coefficient', fontweight='bold')
+    # ax.set_title('Gini Coefficient Comparison', fontsize=22, fontweight='bold')
+    ax.tick_params(labelsize=20)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+    ax.legend(fontsize=24, loc='upper right', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95,bbox_to_anchor=(1.0, 0.9))
     ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
     ax.set_axisbelow(True)
     
@@ -120,7 +125,7 @@ def create_tps_line_figure(dataframes_dict):
         print("没有有效的数据")
         return
     
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
     linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
@@ -136,17 +141,17 @@ def create_tps_line_figure(dataframes_dict):
             ax.plot(df.index, cumulative_mean, 
                     label=f'{ct.upper()}',
                     color=colors.get(ct), 
-                    linewidth=2.2,
                     linestyle=linestyles.get(ct, '-'),
                     marker=markers.get(ct),
-                    markersize=6,
                     markevery=max(1, len(df) // 8),
                     alpha=0.9)
     
-    ax.set_xlabel('Slot Index', fontsize=22, fontweight='bold')
-    ax.set_ylabel('Throughput (tx/s)', fontsize=22, fontweight='bold')
-    ax.set_title('Transaction Throughput Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=18)
+    ax.set_xlabel('Slot', fontweight='bold')
+    ax.set_ylabel('Throughput (tx/s)', fontweight='bold')
+    # ax.set_title('Transaction Throughput Comparison', fontsize=22, fontweight='bold')
+    ax.tick_params(labelsize=20)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.legend(fontsize=24, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
     ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
     ax.set_axisbelow(True)
@@ -181,7 +186,7 @@ def create_path_length_line_figure(dataframes_dict):
         print("没有有效的数据")
         return
     
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
     linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
@@ -197,17 +202,17 @@ def create_path_length_line_figure(dataframes_dict):
             ax.plot(df.index, cumulative_mean,
                     label=f'{ct.upper()}',
                     color=colors.get(ct),
-                    linewidth=2.2,
                     linestyle=linestyles.get(ct, '-'),
                     marker=markers.get(ct),
-                    markersize=6,
                     markevery=max(1, len(df) // 8),
                     alpha=0.9)
     
-    ax.set_xlabel('Slot Index', fontsize=22, fontweight='bold')
-    ax.set_ylabel('Average Path Length', fontsize=22, fontweight='bold')
-    ax.set_title('Transaction Path Length Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=18)
+    ax.set_xlabel('Slot Index', fontweight='bold')
+    ax.set_ylabel('Average Path Length',  fontweight='bold')
+    # ax.set_title('Transaction Path Length Comparison', fontsize=22, fontweight='bold')
+    ax.tick_params(labelsize=20)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.legend(fontsize=24, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
     ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
     ax.set_axisbelow(True)
@@ -247,7 +252,7 @@ def create_tx_delay_line_figure(dataframes_dict):
         print("没有有效的数据")
         return
     
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
     linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
@@ -265,18 +270,18 @@ def create_tx_delay_line_figure(dataframes_dict):
                 ax.plot(df.index, cumulative_mean,
                         label=f'{ct.upper()}',
                         color=colors.get(ct),
-                        linewidth=2.2,
                         linestyle=linestyles.get(ct, '-'),
                         marker=markers.get(ct),
-                        markersize=6,
                         markevery=max(1, len(df) // 8),
                         alpha=0.9)
     
-    ax.set_xlabel('Slot Index', fontsize=22, fontweight='bold')
-    ax.set_ylabel('Transaction Packing Delay (ms)', fontsize=22, fontweight='bold')
-    ax.set_title('Average Transaction Packing Delay Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=18)
-    ax.legend(fontsize=24, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
+    ax.set_xlabel('Slot',  fontweight='bold')
+    ax.set_ylabel('Transaction Packing Delay (ms)',  fontweight='bold')
+    # ax.set_title('Average Transaction Packing Delay Comparison', fontsize=22, fontweight='bold')
+    ax.tick_params(labelsize=20)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.legend(fontsize=26, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
     ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
     ax.set_axisbelow(True)
     
