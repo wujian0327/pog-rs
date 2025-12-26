@@ -15,7 +15,7 @@ pub mod pog;
 pub mod pos;
 pub mod pow;
 
-#[derive(ValueEnum, Debug, Clone, Copy)]
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsensusType {
     POS,
     POG,
@@ -117,10 +117,11 @@ impl Validator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ValidatorError {
     JSONError,
     NOValidatorError,
+    NoWinner,
 }
 impl fmt::Display for ValidatorError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -131,6 +132,10 @@ impl fmt::Display for ValidatorError {
 
             ValidatorError::NOValidatorError => {
                 write!(f, "NoValidatorError")
+            }
+
+            ValidatorError::NoWinner => {
+                write!(f, "NoWinner")
             }
         }
     }

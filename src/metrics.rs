@@ -21,7 +21,7 @@ pub struct SlotMetrics {
     pub block_production_failed: usize, // 失败出块数
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct PathStats {
     pub avg_length: f64,
     pub min_length: usize,
@@ -29,7 +29,7 @@ pub struct PathStats {
     pub median_length: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct TxPackingDelayStats {
     pub avg_delay_ms: f64, // 平均打包延迟 (ms)
 }

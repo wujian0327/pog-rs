@@ -207,7 +207,7 @@ def create_path_length_line_figure(dataframes_dict):
                     markevery=max(1, len(df) // 8),
                     alpha=0.9)
     
-    ax.set_xlabel('Slot Index', fontweight='bold')
+    ax.set_xlabel('Slot', fontweight='bold')
     ax.set_ylabel('Average Path Length',  fontweight='bold')
     # ax.set_title('Transaction Path Length Comparison', fontsize=22, fontweight='bold')
     ax.tick_params(labelsize=20)

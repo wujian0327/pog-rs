@@ -2,7 +2,7 @@ use crate::blockchain::block::{Block, BlockError, Body};
 use crate::blockchain::path::{AggregatedSignedPaths, TransactionPaths};
 use crate::blockchain::transaction::Transaction;
 use crate::blockchain::{BlockChainError, Blockchain};
-use crate::consensus::{RandaoSeed, Validator};
+use crate::consensus::{ConsensusType, RandaoSeed, Validator};
 use crate::network::message::{Message, MessageType};
 use crate::network::world_state::SlotManager;
 use crate::wallet::Wallet;
@@ -33,8 +33,11 @@ pub struct Node {
     pub offline_until_epoch: Option<u64>,
     pub offline_probability: f64,
     pub sync_in_progress: bool,
-    pub transaction_fee: f64, // 交易手续费
-    pub balance: f64,         // 账户余额
+    pub transaction_fee: f64,     // 交易手续费
+    pub balance: f64,             // 账户余额
+    pub max_tx_per_block: usize,  // 每个区块最大交易数量
+    pub consensus: ConsensusType, // 共识算法类型
+    pub max_mempool_size: usize,  // 内存池最大容量
 }
 
 #[derive(Clone)]
@@ -70,8 +73,15 @@ impl Node {
         slot: u64,
         blockchain: Blockchain,
         world_state_sender: Sender<Message>,
+        max_tx_per_block: usize,
+        consensus: ConsensusType,
+        wallet_seed: u64,
     ) -> Self {
-        let wallet = Wallet::new();
+        let wallet = if wallet_seed == 0 {
+            Wallet::new()
+        } else {
+            Wallet::new_deterministic(wallet_seed, index)
+        };
         let (sender, receiver) = tokio::sync::mpsc::channel(1024);
         Node {
             index,
@@ -92,6 +102,9 @@ impl Node {
             sync_in_progress: false,
             transaction_fee: 0.0,
             balance: 0.0,
+            max_tx_per_block,
+            consensus,
+            max_mempool_size: max_tx_per_block * 2,
         }
     }
 
@@ -102,6 +115,8 @@ impl Node {
         blockchain: Blockchain,
         wallet: Wallet,
         world_state_sender: Sender<Message>,
+        max_tx_per_block: usize,
+        consensus: ConsensusType,
     ) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
         Node {
@@ -123,6 +138,9 @@ impl Node {
             sync_in_progress: false,
             transaction_fee: 0.0,
             balance: 0.0,
+            max_tx_per_block,
+            consensus,
+            max_mempool_size: max_tx_per_block * 2,
         }
     }
 
@@ -133,6 +151,9 @@ impl Node {
         blockchain: Blockchain,
         world_state_sender: Sender<Message>,
         fake_node_num: i32,
+        max_tx_per_block: usize,
+        consensus: ConsensusType,
+        wallet_seed: u64,
     ) -> Self {
         let mut sybil_nodes: Vec<Node> = Vec::new();
         for i in 0..fake_node_num {
@@ -142,11 +163,18 @@ impl Node {
                 slot,
                 blockchain.clone(),
                 world_state_sender.clone(),
+                max_tx_per_block,
+                consensus,
+                wallet_seed,
             );
             n.set_node_type(NodeType::Sybil);
             sybil_nodes.push(n);
         }
-        let wallet = Wallet::new();
+        let wallet = if wallet_seed == 0 {
+            Wallet::new()
+        } else {
+            Wallet::new_deterministic(wallet_seed, index)
+        };
         let (sender, receiver) = tokio::sync::mpsc::channel(1024);
         Node {
             index,
@@ -167,6 +195,9 @@ impl Node {
             sync_in_progress: false,
             transaction_fee: 0.0,
             balance: 0.0,
+            max_tx_per_block,
+            consensus,
+            max_mempool_size: max_tx_per_block * 2,
         }
     }
 
@@ -178,32 +209,108 @@ impl Node {
         self.offline_probability = probability.clamp(0.0, 1.0);
     }
 
-    pub async fn generate_block(&self, epoch: u64, slot: u64) -> Result<Block, BlockError> {
-        let transaction_paths = {
-            let mut transaction_paths = self.transaction_paths_cache.write().await;
-            let transaction_paths_clone = transaction_paths.clone();
-            transaction_paths.clear();
-            transaction_paths_clone
+    pub async fn create_block_template(&self, epoch: u64, slot: u64) -> Result<Block, BlockError> {
+        let transaction_paths_to_pack = {
+            let transaction_paths_cache = self.transaction_paths_cache.read().await;
+            let blockchain = self.blockchain.read().await;
+
+            // 1. 过滤掉已经在区块链中的交易
+            let mut valid_paths: Vec<TransactionPaths> = transaction_paths_cache
+                .iter()
+                .filter(|x| !blockchain.exist_transaction(x.transaction.hash.clone()))
+                .cloned()
+                .collect();
+
+            // 2. 按手续费从高到低排序
+            valid_paths.sort_by(|a, b| {
+                b.transaction
+                    .fee
+                    .partial_cmp(&a.transaction.fee)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // 3. 截取前 max_tx_per_block 个
+            let pack_count = std::cmp::min(valid_paths.len(), self.max_tx_per_block);
+            valid_paths[..pack_count].to_vec()
         };
 
-        // 过滤掉已经在区块链中的交易
-        let blockchain = self.blockchain.read().await;
-        let mut transactions: Vec<Transaction> = Vec::with_capacity(transaction_paths.len());
-        let mut paths: Vec<AggregatedSignedPaths> = Vec::with_capacity(transaction_paths.len());
-        for x in transaction_paths {
-            // 检查交易是否已经在区块链中
-            if !blockchain.exist_transaction(x.transaction.hash.clone()) {
-                transactions.push(x.transaction.clone());
-                paths.push(x.to_aggregated_signed_paths());
-            } else {
-                debug!(
-                    "Node[{}] skipping transaction[{}] that already exists in blockchain",
-                    self.index, x.transaction.hash
-                );
-            }
+        let mut transactions: Vec<Transaction> =
+            Vec::with_capacity(transaction_paths_to_pack.len());
+        let mut paths: Vec<AggregatedSignedPaths> =
+            Vec::with_capacity(transaction_paths_to_pack.len());
+
+        for x in transaction_paths_to_pack {
+            transactions.push(x.transaction.clone());
+            paths.push(x.to_aggregated_signed_paths());
         }
 
         // 获取需要的信息后再释放读锁
+        let blockchain = self.blockchain.read().await;
+        let last_index = blockchain.get_last_index();
+        let last_hash = blockchain.get_last_hash();
+        drop(blockchain);
+
+        let body = Body::new(transactions, paths);
+        let new_block = Block::new(
+            last_index + 1,
+            epoch,
+            slot,
+            last_hash,
+            body,
+            self.wallet.clone(),
+        )?;
+
+        Ok(new_block)
+    }
+
+    pub async fn generate_block(&self, epoch: u64, slot: u64) -> Result<Block, BlockError> {
+        let transaction_paths_to_pack = {
+            let mut transaction_paths_cache = self.transaction_paths_cache.write().await;
+            let blockchain = self.blockchain.read().await;
+
+            // 1. 过滤掉已经在区块链中的交易
+            let mut valid_paths: Vec<TransactionPaths> = transaction_paths_cache
+                .iter()
+                .filter(|x| !blockchain.exist_transaction(x.transaction.hash.clone()))
+                .cloned()
+                .collect();
+
+            // 2. 按手续费从高到低排序
+            valid_paths.sort_by(|a, b| {
+                b.transaction
+                    .fee
+                    .partial_cmp(&a.transaction.fee)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // 3. 截取前 max_tx_per_block 个
+            let pack_count = std::cmp::min(valid_paths.len(), self.max_tx_per_block);
+            let to_pack = valid_paths[..pack_count].to_vec();
+
+            // 4. 更新缓存：移除已打包的交易，保留未打包且不在链上的交易
+            let packed_hashes: std::collections::HashSet<String> =
+                to_pack.iter().map(|x| x.transaction.hash.clone()).collect();
+
+            *transaction_paths_cache = valid_paths
+                .into_iter()
+                .filter(|x| !packed_hashes.contains(&x.transaction.hash))
+                .collect();
+
+            to_pack
+        };
+
+        let mut transactions: Vec<Transaction> =
+            Vec::with_capacity(transaction_paths_to_pack.len());
+        let mut paths: Vec<AggregatedSignedPaths> =
+            Vec::with_capacity(transaction_paths_to_pack.len());
+
+        for x in transaction_paths_to_pack {
+            transactions.push(x.transaction.clone());
+            paths.push(x.to_aggregated_signed_paths());
+        }
+
+        // 获取需要的信息后再释放读锁
+        let blockchain = self.blockchain.read().await;
         let last_index = blockchain.get_last_index();
         let last_hash = blockchain.get_last_hash();
         drop(blockchain);
@@ -431,11 +538,18 @@ impl Node {
                         let transactions_cache = self.transaction_paths_cache.read().await;
                         let mut skip = false;
                         for cache in transactions_cache.iter() {
-                            if cache.transaction.hash == transaction_paths.transaction.hash
-                                && cache.paths.len() <= transaction_paths.paths.len()
-                            {
-                                skip = true;
-                                break;
+                            if cache.transaction.hash == transaction_paths.transaction.hash {
+                                if self.consensus == ConsensusType::POG {
+                                    // POG: 只有当缓存的路径长度更短或相等时才跳过
+                                    if cache.paths.len() <= transaction_paths.paths.len() {
+                                        skip = true;
+                                        break;
+                                    }
+                                } else {
+                                    // 其他共识: 只要收到过就跳过
+                                    skip = true;
+                                    break;
+                                }
                             }
                         }
                         if skip {
@@ -452,6 +566,22 @@ impl Node {
                     //收到交易，存储
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
+
+                        // 检查内存池是否已满
+                        if transactions_cache.len() >= self.max_mempool_size {
+                            // 如果内存池满了，且这是一个新交易，则丢弃
+                            if !transactions_cache
+                                .iter()
+                                .any(|t| t.transaction.hash == transaction_paths.transaction.hash)
+                            {
+                                debug!(
+                                    "Node[{}] mempool full, dropping transaction[{}]",
+                                    self.index, transaction_paths.transaction.hash
+                                );
+                                continue;
+                            }
+                        }
+
                         //先删除，再添加
                         transactions_cache
                             .retain(|t| t.transaction.hash != transaction_paths.transaction.hash);
@@ -1193,7 +1323,16 @@ mod tests {
         )
         .unwrap();
 
-        let mut node = Node::new(0, 0, 0, blockchain, world_sender);
+        let mut node = Node::new(
+            0,
+            0,
+            0,
+            blockchain,
+            world_sender,
+            1000,
+            ConsensusType::POG,
+            0,
+        );
         let node_sender = node.sender.clone();
         let handle1 = tokio::spawn(async move {
             node.run().await;
@@ -1231,6 +1370,8 @@ mod tests {
             blockchain.clone(),
             wallet0.clone(),
             world_sender.clone(),
+            1000,
+            ConsensusType::POG,
         );
         let mut node1 = Node::new_with_wallet(
             1,
@@ -1239,6 +1380,8 @@ mod tests {
             blockchain.clone(),
             wallet1.clone(),
             world_sender.clone(),
+            1000,
+            ConsensusType::POG,
         );
         let mut node2 = Node::new_with_wallet(
             2,
@@ -1247,6 +1390,8 @@ mod tests {
             blockchain.clone(),
             wallet2.clone(),
             world_sender.clone(),
+            1000,
+            ConsensusType::POG,
         );
         let mut node3 = Node::new_with_wallet(
             3,
@@ -1255,6 +1400,8 @@ mod tests {
             blockchain.clone(),
             wallet3.clone(),
             world_sender.clone(),
+            1000,
+            ConsensusType::POG,
         );
 
         node0.neighbors.push(Neighbor::new(
@@ -1354,7 +1501,7 @@ mod tests {
         let (_tx, _rx) = tokio::sync::mpsc::channel::<Message>(8);
         let (world_tx, _world_rx) = tokio::sync::mpsc::channel::<Message>(8);
         let bc = Blockchain::new(Block::gen_genesis_block());
-        let mut node = Node::new(0, 0, 0, bc, world_tx);
+        let mut node = Node::new(0, 0, 0, bc, world_tx, 1000, ConsensusType::POG, 0);
 
         assert_eq!(node.get_balance(), 0.0);
 

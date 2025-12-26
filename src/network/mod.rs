@@ -37,6 +37,8 @@ pub async fn start_network(
     transaction_fee: f64,
     graph_seed: u64,
     base_reward: f64,
+    max_tx_per_block: usize,
+    wallet_seed: u64,
 ) {
     info!("Consensus Type is {}", consensus);
 
@@ -64,7 +66,16 @@ pub async fn start_network(
         .map(|i| {
             if i < node_num {
                 // Honest nodes
-                let mut node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                let mut node = Node::new(
+                    i,
+                    0,
+                    0,
+                    bc.clone(),
+                    world_sender.clone(),
+                    max_tx_per_block,
+                    consensus,
+                    wallet_seed,
+                );
                 node.set_transaction_fee(transaction_fee);
                 node.simple_print();
                 (node.get_address(), node)
@@ -77,13 +88,25 @@ pub async fn start_network(
                     bc.clone(),
                     world_sender.clone(),
                     fake_node_num as i32,
+                    max_tx_per_block,
+                    consensus,
+                    wallet_seed,
                 );
                 node.set_transaction_fee(transaction_fee);
                 node.simple_print();
                 (node.get_address(), node)
             } else {
                 // Unstable nodes
-                let mut node = Node::new(i, 0, 0, bc.clone(), world_sender.clone());
+                let mut node = Node::new(
+                    i,
+                    0,
+                    0,
+                    bc.clone(),
+                    world_sender.clone(),
+                    max_tx_per_block,
+                    consensus,
+                    wallet_seed,
+                );
                 node.set_node_type(NodeType::Unstable);
                 node.set_offline_probability(offline_probability);
                 node.set_transaction_fee(transaction_fee);
@@ -104,7 +127,8 @@ pub async fn start_network(
         .collect();
     world.nodes_index = nodes_index.clone();
 
-    let nodes_address: Vec<String> = node_map.keys().cloned().collect();
+    let mut nodes_address: Vec<String> = node_map.keys().cloned().collect();
+    nodes_address.sort();
     info!(
         "Generate {} honest nodes, {} sybil nodes, {} unstable nodes",
         node_num, sybil_node_num, unstable_node_num

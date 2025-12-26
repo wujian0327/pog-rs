@@ -519,7 +519,7 @@ impl WorldState {
                                 continue;
                             }
                             // 从第一个区块开始对比，找到分叉点后替换本地区块链
-                            let mut shared_self = shared_self.write().await;
+                            let shared_self = shared_self.write().await;
                             let mut local_chain = shared_self.blockchain.write().await;
 
                             let local_len = local_chain.blocks.len();
@@ -696,9 +696,26 @@ mod tests {
 
         let validators = world.validators.clone();
         let current_slot = world.current_slot.clone();
-
-        let mut node0 = Node::new(0, 0, 0, blockchain.clone(), world_sender.clone());
-        let mut node1 = Node::new(1, 0, 0, blockchain.clone(), world_sender.clone());
+        let mut node0 = Node::new(
+            0,
+            0,
+            0,
+            blockchain.clone(),
+            world_sender.clone(),
+            1000,
+            ConsensusType::POG,
+            0,
+        );
+        let mut node1 = Node::new(
+            1,
+            0,
+            0,
+            blockchain,
+            world_sender.clone(),
+            1000,
+            ConsensusType::POG,
+            0,
+        );
         let node0_sender = node0.sender.clone();
         let node1_sender = node1.sender.clone();
         let node0_wallet = node0.wallet.clone();

@@ -33,7 +33,7 @@ struct Args {
     offline_probability: f64,
 
     /// 每秒交易个数（泊松分布）(Number of transactions per second)
-    #[clap(short, long, default_value = "10")]
+    #[clap(short, long, default_value = "50")]
     trans_num: u32,
 
     /// 时隙持续时间（秒）(Slot duration in seconds)
@@ -45,7 +45,7 @@ struct Args {
     slot_per_epoch: u64,
 
     /// PoW初始难度 (PoW initial difficulty)
-    #[clap(long, default_value = "20")]
+    #[clap(long, default_value = "28")]
     pow_difficulty: usize,
 
     /// PoW最大线程数 (PoW max threads)
@@ -78,6 +78,16 @@ struct Args {
     /// 固定奖励 (Base reward per block for all consensus)
     #[clap(long, default_value = "1.0")]
     base_reward: f64,
+
+    /// 每个区块最大交易数量 (Max transactions per block)
+    #[clap(long, default_value = "200")]
+    max_tx_per_block: usize,
+
+    /// 钱包生成种子 (Wallet generation seed)
+    /// 用于固定节点地址，便于可重复实验，固定初始资源分配
+    /// 设置为0表示使用随机地址(0 means random).
+    #[clap(long, default_value = "8")]
+    wallet_seed: u64,
 }
 
 #[tokio::main]
@@ -105,6 +115,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.transaction_fee,
         args.graph_seed,
         args.base_reward,
+        args.max_tx_per_block,
+        args.wallet_seed,
     )
     .await;
     Ok(())

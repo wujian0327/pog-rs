@@ -63,6 +63,29 @@ impl Wallet {
         }
     }
 
+    pub fn new_deterministic(seed: u64, index: u32) -> Wallet {
+        let mut combined = seed.to_be_bytes().to_vec();
+        combined.extend_from_slice(&index.to_be_bytes());
+        let hash = Hasher::hash(combined);
+
+        let secret_key = SecretKey::from_slice(&hash).expect("32 bytes");
+        let secp = Secp256k1::new();
+        let public_key = secret_key.public_key(&secp);
+        let address = Wallet::public_key_to_address(public_key);
+
+        let bls_private_key =
+            BlsSecretKey::key_gen(secret_key.secret_bytes().as_slice(), &[]).unwrap();
+        let bls_public_key = bls_private_key.sk_to_pk();
+        insert_bls_pub_key(address.clone(), bls_public_key);
+        Wallet {
+            secret_key,
+            public_key,
+            bls_private_key,
+            bls_public_key,
+            address,
+        }
+    }
+
     #[allow(dead_code)]
     fn from_secret_key_string(mut secret_key: String) -> Result<Wallet, WalletError> {
         if secret_key.len() == 66 {
