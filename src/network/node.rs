@@ -82,7 +82,7 @@ impl Node {
         } else {
             Wallet::new_deterministic(wallet_seed, index)
         };
-        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
+        let (sender, receiver) = tokio::sync::mpsc::channel(4096);
         Node {
             index,
             epoch,
@@ -104,7 +104,7 @@ impl Node {
             balance: 0.0,
             max_tx_per_block,
             consensus,
-            max_mempool_size: max_tx_per_block * 2,
+            max_mempool_size: max_tx_per_block,
         }
     }
 
@@ -140,7 +140,7 @@ impl Node {
             balance: 0.0,
             max_tx_per_block,
             consensus,
-            max_mempool_size: max_tx_per_block * 2,
+            max_mempool_size: max_tx_per_block,
         }
     }
 
@@ -175,7 +175,7 @@ impl Node {
         } else {
             Wallet::new_deterministic(wallet_seed, index)
         };
-        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
+        let (sender, receiver) = tokio::sync::mpsc::channel(4096);
         Node {
             index,
             epoch,
@@ -197,7 +197,7 @@ impl Node {
             balance: 0.0,
             max_tx_per_block,
             consensus,
-            max_mempool_size: max_tx_per_block * 2,
+            max_mempool_size: max_tx_per_block,
         }
     }
 
@@ -771,6 +771,22 @@ impl Node {
                     //缓存交易
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
+
+                        // 检查内存池是否已满
+                        if transactions_cache.len() >= self.max_mempool_size {
+                            // 如果内存池满了，且这是一个新交易，则丢弃
+                            if !transactions_cache
+                                .iter()
+                                .any(|t| t.transaction.hash == transaction_paths.transaction.hash)
+                            {
+                                debug!(
+                                    "Node[{}] mempool full, dropping generated transaction[{}]",
+                                    self.index, transaction_paths.transaction.hash
+                                );
+                                continue;
+                            }
+                        }
+
                         transactions_cache.push(transaction_paths.clone())
                     }
                     match self.node_type {

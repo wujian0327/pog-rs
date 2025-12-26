@@ -102,18 +102,18 @@ impl PowConsensus {
         let target_block_time = self.slot_duration.as_secs();
 
         // 根据实际块时间调整难度
-        if avg_block_time < target_block_time {
-            // 块生成太快，增加难度
-            self.difficulty = self.difficulty.saturating_add(1);
-            info!(
-                "PoW: Difficulty increased to {} (avg block time: {}s)",
-                self.difficulty, avg_block_time
-            );
-        } else {
+        if avg_block_time > target_block_time {
             // 块生成太慢，降低难度
             self.difficulty = self.difficulty.saturating_sub(1);
             info!(
                 "PoW: Difficulty decreased to {} (avg block time: {}s)",
+                self.difficulty, avg_block_time
+            );
+        } else {
+            // 块生成太快，增加难度
+            self.difficulty = self.difficulty.saturating_add(1);
+            info!(
+                "PoW: Difficulty increased to {} (avg block time: {}s)",
                 self.difficulty, avg_block_time
             );
         }
@@ -208,7 +208,7 @@ impl Consensus for PowConsensus {
         }
 
         // 等待线程完成或超时
-        let timeout_instant = start_time + slot_duration * 2;
+        let timeout_instant = start_time + slot_duration * 10;
         loop {
             let now = std::time::Instant::now();
 

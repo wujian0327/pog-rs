@@ -250,11 +250,23 @@ impl WorldState {
         let last_block = blockchain.get_last_block();
         let tx_count = last_block.body.transactions.len();
 
-        // Calculate throughput (tx/s)
-        let throughput = if self.slot_duration.as_secs() > 0 {
-            tx_count as f64 / self.slot_duration.as_secs_f64()
-        } else {
-            0.0
+        // Calculate throughput (tx/s) - based on time between current and previous block
+        let throughput = {
+            let blocks = &blockchain.blocks;
+            if blocks.len() > 1 {
+                let prev_block_timestamp = blocks[blocks.len() - 2].header.timestamp;
+                let time_delta = last_block
+                    .header
+                    .timestamp
+                    .saturating_sub(prev_block_timestamp);
+                if time_delta > 0 {
+                    tx_count as f64 / time_delta as f64
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
         };
 
         let paths = last_block.body.paths;
@@ -323,6 +335,7 @@ impl WorldState {
 
     pub async fn run(self, mut receiver: Receiver<Message>) {
         let node_index = self.nodes_index.clone();
+        let consensus_name = self.consensus_name.clone();
         let shared_self = Arc::new(RwLock::new(self));
         let receiver_task = {
             let shared_self = Arc::clone(&shared_self);
@@ -581,6 +594,8 @@ impl WorldState {
                 }
             })
         };
+
+        let mut last_index = 0;
         let timer_task = task::spawn(async move {
             loop {
                 let time_interval = {
@@ -600,6 +615,45 @@ impl WorldState {
                 let deadline = Instant::now() + time_interval;
                 time::sleep_until(deadline).await;
                 debug!("World State time trigger: {}", tools::get_time_string());
+
+                // 对于 PoW 协议，需要等待区块链长度增加后才进入下一个 slot
+
+                if consensus_name == "pow" {
+                    loop {
+                        if last_index == 0 {
+                            time::sleep(Duration::from_secs(
+                                shared_self.read().await.slot_per_epoch,
+                            ))
+                            .await;
+                            break;
+                        }
+                        let current_index = {
+                            shared_self
+                                .read()
+                                .await
+                                .blockchain
+                                .read()
+                                .await
+                                .get_last_index()
+                        };
+                        if current_index > last_index {
+                            // 区块链有新块，可以进入下一个 slot
+                            break;
+                        }
+
+                        // 短暂休眠，避免忙轮询
+                        time::sleep(Duration::from_millis(100)).await;
+                    }
+                }
+                last_index = {
+                    shared_self
+                        .read()
+                        .await
+                        .blockchain
+                        .read()
+                        .await
+                        .get_last_index()
+                };
                 {
                     let mut shared_self = shared_self.write().await;
                     shared_self.next_slot().await;

@@ -77,7 +77,8 @@ pub fn calculate_tx_packing_delay(
         return TxPackingDelayStats { avg_delay_ms: 0.0 };
     }
 
-    // 计算平均打包延迟 (ms)
+    // 计算平均打包延迟 (秒)
+    // 时间戳单位为秒
     let total_delay: f64 = transactions_timestamp
         .iter()
         .map(|tx_time| {
