@@ -9,6 +9,7 @@ use crate::wallet::Wallet;
 use log::{debug, error, info, warn};
 use rand::Rng;
 use serde_json;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -26,7 +27,7 @@ pub struct Node {
     pub receiver: Receiver<Message>,
     pub neighbors: Vec<Neighbor>,
     pub world_state_sender: Sender<Message>,
-    pub transaction_paths_cache: Arc<RwLock<Vec<TransactionPaths>>>,
+    pub transaction_paths_cache: Arc<RwLock<HashMap<String, TransactionPaths>>>,
     pub node_type: NodeType,
     pub sybil_nodes: Vec<Node>,
     pub is_online: bool,
@@ -91,7 +92,7 @@ impl Node {
             blockchain: Arc::new(RwLock::new(blockchain)),
             sender,
             receiver,
-            transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
+            transaction_paths_cache: Arc::new(RwLock::new(HashMap::new())),
             neighbors: Vec::new(),
             world_state_sender,
             node_type: NodeType::Honest,
@@ -127,7 +128,7 @@ impl Node {
             blockchain: Arc::new(RwLock::new(blockchain)),
             sender,
             receiver,
-            transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
+            transaction_paths_cache: Arc::new(RwLock::new(HashMap::new())),
             neighbors: Vec::new(),
             world_state_sender,
             node_type: NodeType::Honest,
@@ -184,7 +185,7 @@ impl Node {
             blockchain: Arc::new(RwLock::new(blockchain)),
             sender,
             receiver,
-            transaction_paths_cache: Arc::new(RwLock::new(Vec::new())),
+            transaction_paths_cache: Arc::new(RwLock::new(HashMap::new())),
             neighbors: Vec::new(),
             world_state_sender,
             node_type: NodeType::Sybil,
@@ -216,7 +217,7 @@ impl Node {
 
             // 1. 过滤掉已经在区块链中的交易
             let mut valid_paths: Vec<TransactionPaths> = transaction_paths_cache
-                .iter()
+                .values()
                 .filter(|x| !blockchain.exist_transaction(x.transaction.hash.clone()))
                 .cloned()
                 .collect();
@@ -270,7 +271,7 @@ impl Node {
 
             // 1. 过滤掉已经在区块链中的交易
             let mut valid_paths: Vec<TransactionPaths> = transaction_paths_cache
-                .iter()
+                .values()
                 .filter(|x| !blockchain.exist_transaction(x.transaction.hash.clone()))
                 .cloned()
                 .collect();
@@ -287,14 +288,11 @@ impl Node {
             let pack_count = std::cmp::min(valid_paths.len(), self.max_tx_per_block);
             let to_pack = valid_paths[..pack_count].to_vec();
 
-            // 4. 更新缓存：移除已打包的交易，保留未打包且不在链上的交易
+            // 4. 更新缓存：移除已打包的交易
             let packed_hashes: std::collections::HashSet<String> =
                 to_pack.iter().map(|x| x.transaction.hash.clone()).collect();
 
-            *transaction_paths_cache = valid_paths
-                .into_iter()
-                .filter(|x| !packed_hashes.contains(&x.transaction.hash))
-                .collect();
+            transaction_paths_cache.retain(|hash, _| !packed_hashes.contains(hash));
 
             to_pack
         };
@@ -488,7 +486,9 @@ impl Node {
                             .collect();
                         let mut transaction_paths_cache =
                             self.transaction_paths_cache.write().await;
-                        transaction_paths_cache.retain(|x| !tx_hashs.contains(&x.transaction.hash));
+                        for tx_hash in tx_hashs {
+                            transaction_paths_cache.remove(&tx_hash);
+                        }
                     }
                     //广播到其他邻居
                     for neighbor_sender in self.neighbors.clone() {
@@ -533,27 +533,21 @@ impl Node {
                             continue;
                         }
                     }
-                    //判断交易是否已经收到了,判断交易的paths是否最短
+                    //判断交易是否已经收到了,判断交易的paths是否最短 (O(1)查找)
                     {
                         let transactions_cache = self.transaction_paths_cache.read().await;
-                        let mut skip = false;
-                        for cache in transactions_cache.iter() {
-                            if cache.transaction.hash == transaction_paths.transaction.hash {
-                                if self.consensus == ConsensusType::POG {
-                                    // POG: 只有当缓存的路径长度更短或相等时才跳过
-                                    if cache.paths.len() <= transaction_paths.paths.len() {
-                                        skip = true;
-                                        break;
-                                    }
-                                } else {
-                                    // 其他共识: 只要收到过就跳过
-                                    skip = true;
-                                    break;
+                        let tx_hash = &transaction_paths.transaction.hash;
+                        
+                        if let Some(cached_tx) = transactions_cache.get(tx_hash) {
+                            if self.consensus == ConsensusType::POG {
+                                // POG: 只有当缓存的路径长度更短或相等时才跳过
+                                if cached_tx.paths.len() <= transaction_paths.paths.len() {
+                                    continue;
                                 }
+                            } else {
+                                // 其他共识: 只要收到过就跳过
+                                continue;
                             }
-                        }
-                        if skip {
-                            continue;
                         }
                     }
                     debug!(
@@ -566,26 +560,22 @@ impl Node {
                     //收到交易，存储
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
+                        let tx_hash = transaction_paths.transaction.hash.clone();
 
                         // 检查内存池是否已满
                         if transactions_cache.len() >= self.max_mempool_size {
                             // 如果内存池满了，且这是一个新交易，则丢弃
-                            if !transactions_cache
-                                .iter()
-                                .any(|t| t.transaction.hash == transaction_paths.transaction.hash)
-                            {
+                            if !transactions_cache.contains_key(&tx_hash) {
                                 debug!(
                                     "Node[{}] mempool full, dropping transaction[{}]",
-                                    self.index, transaction_paths.transaction.hash
+                                    self.index, tx_hash
                                 );
                                 continue;
                             }
                         }
 
-                        //先删除，再添加
-                        transactions_cache
-                            .retain(|t| t.transaction.hash != transaction_paths.transaction.hash);
-                        transactions_cache.push(transaction_paths.clone())
+                        //插入或更新交易
+                        transactions_cache.insert(tx_hash, transaction_paths.clone());
                     }
 
                     match self.node_type {
@@ -771,23 +761,21 @@ impl Node {
                     //缓存交易
                     {
                         let mut transactions_cache = self.transaction_paths_cache.write().await;
+                        let tx_hash = transaction_paths.transaction.hash.clone();
 
                         // 检查内存池是否已满
                         if transactions_cache.len() >= self.max_mempool_size {
                             // 如果内存池满了，且这是一个新交易，则丢弃
-                            if !transactions_cache
-                                .iter()
-                                .any(|t| t.transaction.hash == transaction_paths.transaction.hash)
-                            {
+                            if !transactions_cache.contains_key(&tx_hash) {
                                 debug!(
                                     "Node[{}] mempool full, dropping generated transaction[{}]",
-                                    self.index, transaction_paths.transaction.hash
+                                    self.index, tx_hash
                                 );
                                 continue;
                             }
                         }
 
-                        transactions_cache.push(transaction_paths.clone())
+                        transactions_cache.insert(tx_hash, transaction_paths.clone());
                     }
                     match self.node_type {
                         NodeType::Sybil => {

@@ -6,23 +6,10 @@ from pathlib import Path
 from scipy import stats
 from matplotlib.ticker import MaxNLocator
 
-# 设置科研风格
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 100
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 28
-plt.rcParams['axes.labelsize'] = 28
-plt.rcParams['axes.titlesize'] = 28
-plt.rcParams['xtick.labelsize'] = 28
-plt.rcParams['ytick.labelsize'] = 28
-plt.rcParams['legend.fontsize'] = 28
-plt.rcParams['lines.linewidth'] = 3.0
-plt.rcParams['lines.markersize'] = 10.0
-plt.rcParams['patch.linewidth'] = 1.2
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.4
+from plot_style import set_plot_style, get_colors_and_styles, format_axes, format_figure, format_axes_background
+
+# 设置科研风格（论文风格）
+set_plot_style('paper')
 
 
 def get_project_root():
@@ -46,9 +33,8 @@ def read_metrics_csv(consensus_type):
     
     try:
         df = pd.read_csv(csv_file)
-        # 截取前250个数据点
-        if len(df) > 250:
-            df = df.iloc[:250]
+        if len(df) > 300:
+            df = df.iloc[:300]
         print(f"成功读取 {consensus_type} 的数据: {len(df)} 条记录")
         return df
     except Exception as e:
@@ -65,17 +51,11 @@ def create_gini_line_figure(dataframes_dict):
         return
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    
-    colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
-    linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
-    markers = {'pog': 's', 'pos': 'o', 'pow': '^'}
+    colors, linestyles, markers = get_colors_and_styles()
     
     for ct, df in dataframes_dict.items():
         if df is not None and len(df) > 0:
             gini = df['gini_coefficient'].values
-            
-            # 直接绘制 Gini 系数
-            # cumulative_mean = np.cumsum(gini) / np.arange(1, len(gini) + 1)
             
             ax.plot(df.index, gini, 
                    label=f'{ct.upper()}',
@@ -85,29 +65,13 @@ def create_gini_line_figure(dataframes_dict):
                    markevery=max(1, len(df) // 8),
                    alpha=0.9)
     
-    ax.set_xlabel('Slot',  fontweight='bold')
-    ax.set_ylabel('Gini Coefficient', fontweight='bold')
-    # ax.set_title('Gini Coefficient Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=20)
+    format_axes(ax, xlabel='Slot', ylabel='Gini Coefficient', grid=True)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-    ax.legend(fontsize=24, loc='upper right', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95,bbox_to_anchor=(1.0, 0.9))
-    ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
-    ax.set_axisbelow(True)
-    
-    # 强化所有轴为实线
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    ax.spines['left'].set_color('black')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_color('black')
-    ax.spines['right'].set_color('black')
-    
-    # 使用白色背景
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    ax.legend(fontsize=24, loc='upper right', frameon=True, fancybox=False, 
+             edgecolor='black', framealpha=0.95, bbox_to_anchor=(1.0, 0.9))
+    format_figure(fig)
+    format_axes_background(ax)
     
     plt.tight_layout()
     
@@ -126,10 +90,7 @@ def create_tps_line_figure(dataframes_dict):
         return
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    
-    colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
-    linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
-    markers = {'pog': 's', 'pos': 'o', 'pow': '^'}
+    colors, linestyles, markers = get_colors_and_styles()
     
     for ct, df in dataframes_dict.items():
         if df is not None and len(df) > 0:
@@ -146,29 +107,12 @@ def create_tps_line_figure(dataframes_dict):
                     markevery=max(1, len(df) // 8),
                     alpha=0.9)
     
-    ax.set_xlabel('Slot', fontweight='bold')
-    ax.set_ylabel('Throughput (tx/s)', fontweight='bold')
-    # ax.set_title('Transaction Throughput Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=20)
+    format_axes(ax, xlabel='Slot', ylabel='Throughput (tx/s)', grid=True)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.legend(fontsize=24, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
-    ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
-    ax.set_axisbelow(True)
-    
-    # 强化所有轴为实线
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    ax.spines['left'].set_color('black')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_color('black')
-    ax.spines['right'].set_color('black')
-    
-    # 使用白色背景
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    format_figure(fig)
+    format_axes_background(ax)
     
     plt.tight_layout()
     
@@ -187,10 +131,7 @@ def create_path_length_line_figure(dataframes_dict):
         return
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    
-    colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
-    linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
-    markers = {'pog': 's', 'pos': 'o', 'pow': '^'}
+    colors, linestyles, markers = get_colors_and_styles()
     
     for ct, df in dataframes_dict.items():
         if df is not None and len(df) > 0:
@@ -207,29 +148,12 @@ def create_path_length_line_figure(dataframes_dict):
                     markevery=max(1, len(df) // 8),
                     alpha=0.9)
     
-    ax.set_xlabel('Slot', fontweight='bold')
-    ax.set_ylabel('Average Path Length',  fontweight='bold')
-    # ax.set_title('Transaction Path Length Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=20)
+    format_axes(ax, xlabel='Slot', ylabel='Average Path Length', grid=True)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.legend(fontsize=24, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
-    ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
-    ax.set_axisbelow(True)
-    
-    # 强化所有轴为实线
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    ax.spines['left'].set_color('black')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_color('black')
-    ax.spines['right'].set_color('black')
-    
-    # 使用白色背景
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    format_figure(fig)
+    format_axes_background(ax)
     
     plt.tight_layout()
     
@@ -253,10 +177,7 @@ def create_tx_delay_line_figure(dataframes_dict):
         return
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    
-    colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
-    linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
-    markers = {'pog': 's', 'pos': 'o', 'pow': '^'}
+    colors, linestyles, markers = get_colors_and_styles()
     
     for ct, df in dataframes_dict.items():
         if df is not None and len(df) > 0:
@@ -275,29 +196,12 @@ def create_tx_delay_line_figure(dataframes_dict):
                         markevery=max(1, len(df) // 8),
                         alpha=0.9)
     
-    ax.set_xlabel('Slot',  fontweight='bold')
-    ax.set_ylabel('Transaction Packing Delay (ms)',  fontweight='bold')
-    # ax.set_title('Average Transaction Packing Delay Comparison', fontsize=22, fontweight='bold')
-    ax.tick_params(labelsize=20)
+    format_axes(ax, xlabel='Slot', ylabel='Transaction Packing Delay (s)', grid=True)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.legend(fontsize=26, loc='best', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
-    ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
-    ax.set_axisbelow(True)
-    
-    # 强化所有轴为实线
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    ax.spines['left'].set_color('black')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_color('black')
-    ax.spines['right'].set_color('black')
-    
-    # 使用白色背景
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    format_figure(fig)
+    format_axes_background(ax)
     
     plt.tight_layout()
     

@@ -3,22 +3,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-# 设置科研风格 (参考 analyze_slots.py)
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 100
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 11
-plt.rcParams['axes.titlesize'] = 12
-plt.rcParams['xtick.labelsize'] = 9
-plt.rcParams['ytick.labelsize'] = 9
-plt.rcParams['legend.fontsize'] = 10
-plt.rcParams['lines.linewidth'] = 2.0
-plt.rcParams['patch.linewidth'] = 1.2
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.4
+from plot_style import set_plot_style, format_axes, format_figure, format_axes_background
+
+# 设置紧凑风格（小号字体）
+set_plot_style('paper')
 
 def compute_position_weight(position, path_length):
     """
@@ -92,30 +80,19 @@ def plot_sybil_long_range_defense():
     color_mixed = '#2ca02c'
     
     # 修改 X 轴标签为 Total Path Length
-    ax1.set_xlabel('Total Path Length(Sybil Nodes + Honest Nodes)', fontsize=22, fontweight='bold')
-    ax1.set_ylabel('Sybil Node Propagation Score', fontsize=22, fontweight='bold', color='black')
+    format_axes(ax1, xlabel='Total Path Length', 
+                ylabel='Propagation Score', grid=True)
     
-    # 绘制三条线，X轴使用 path_length
-    line1, = ax1.plot(df_pure['path_length'], df_pure['propagation_score'], 'o-', color=color_pure, linewidth=3, markersize=8, label='Pure Sybil (Honest=0)')
-    line2, = ax1.plot(df_single['path_length'], df_single['propagation_score'], 'D-', color=color_single, linewidth=3, markersize=8, label='Single Honest (Honest=1)')
-    line3, = ax1.plot(df_mixed['path_length'], df_mixed['propagation_score'], '^-', color=color_mixed, linewidth=3, markersize=8, label='Mixed Sybil (Honest=3)')
-    
-    ax1.tick_params(axis='y', labelcolor='black', labelsize=18)
-    ax1.tick_params(axis='x', labelsize=18)
+    ax1.tick_params(axis='x')
     
     # Grid styling
     ax1.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
     ax1.set_axisbelow(True)
-
-    # 强化所有轴为实线 (参考 analyze_slots.py)
-    ax1.spines['left'].set_linewidth(1.5)
-    ax1.spines['bottom'].set_linewidth(1.5)
-    ax1.spines['top'].set_linewidth(1.5)
-    ax1.spines['right'].set_linewidth(1.5)
-    ax1.spines['left'].set_color('black')
-    ax1.spines['bottom'].set_color('black')
-    ax1.spines['top'].set_color('black')
-    ax1.spines['right'].set_color('black')
+    
+    # 绘制三条线，X轴使用 path_length
+    line1, = ax1.plot(df_pure['path_length'], df_pure['propagation_score'], 'o-', color=color_pure,  label='Pure Sybil (Honest=0)')
+    line2, = ax1.plot(df_single['path_length'], df_single['propagation_score'], 'D-', color=color_single,  label='Single Honest (Honest=1)')
+    line3, = ax1.plot(df_mixed['path_length'], df_mixed['propagation_score'], '^-', color=color_mixed, label='Mixed Sybil (Honest=3)')
 
     # 标记 NTD 阈值区域 (统一为 NTD=6)
     plt.axvline(x=NTD, color='#d62728', linestyle='--', alpha=0.8, linewidth=2)
@@ -124,7 +101,7 @@ def plot_sybil_long_range_defense():
     ax1.axvspan(NTD, 15, color='#d62728', alpha=0.1)
     
     # 设置X轴范围
-    ax1.set_xlim(left=0, right=15.5)
+    ax1.set_xlim(left=0, right=15)
 
     # 添加注释
     # Pure Max
@@ -164,24 +141,29 @@ def plot_sybil_long_range_defense():
                  xy=(NTD, df_pure.loc[df_pure['path_length'] >= NTD, 'propagation_score'].iloc[0]), 
                  xytext=(NTD - 4.5, max_pure_y - 0.15),
                  arrowprops=dict(facecolor='#d62728', shrink=0.05),
-                 fontsize=16, color='#d62728', fontweight='bold')
+                 fontsize=18, color='#d62728', fontweight='bold')
 
     # 标题
-    plt.title('Sybil Resistance', fontsize=22, fontweight='bold')
+    # plt.title('Sybil Resistance', fontsize=22, fontweight='bold')
     
     # 图例
     lines = [line1, line2, line3]
     labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc='upper right', fontsize=16, frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
+    ax1.legend(lines, labels, loc='upper right', fontsize=18, frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
 
+    # 应用图形背景格式
+    format_figure(fig)
+    format_axes_background(ax1)
+    
     # 保存
     output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'figures')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
     output_path = os.path.join(output_dir, 'sybil_long_range_defense.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Figure saved to: {output_path}")
+    plt.close()
 
 if __name__ == "__main__":
     try:

@@ -4,21 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import os
 
-# 设置科研风格
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 100
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 22
-plt.rcParams['axes.titlesize'] = 22
-plt.rcParams['xtick.labelsize'] = 18
-plt.rcParams['ytick.labelsize'] = 18
-plt.rcParams['legend.fontsize'] = 22
-plt.rcParams['lines.linewidth'] = 2.5
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.4
+from plot_style import set_plot_style, format_axes, format_figure, format_axes_background
+
+set_plot_style('paper')
 
 def simulate_ntd_dynamics():
     epochs = 100
@@ -100,59 +88,30 @@ def plot_ntd_dynamics(df):
         ax.axvspan(attack_indices[0], attack_indices[-1], color='#d62728', alpha=0.1, label='Long-Range Attack Phase')
         
     # 2. 绘制基准线 (Ground Truth)
-    ax.plot(df['epoch'], df['honest_avg'], color='gray', linestyle='--', linewidth=2, label='Avg Honest Path Length', alpha=0.8)
-    
-    # 绘制真实的平均路径长度 (包含攻击数据)
-    # 计算每轮所有路径的平均值
-    # 注意: df 中没有直接存储这个值，我们需要在 simulate_ntd_dynamics 中计算并保存
-    # 这里先假设 df 已经有了 'all_paths_avg' 列，如果没有，需要先修改 simulate_ntd_dynamics
-    # if 'all_paths_avg' in df.columns:
-    #     ax.plot(df['epoch'], df['all_paths_avg'], color='#d62728', linestyle=':', linewidth=2, label='Avg Path Length (with Attack)', alpha=0.8)
+    ax.plot(df['epoch'], df['honest_avg'], color='gray', linestyle='--',  label='Avg Honest Path Length', alpha=0.8)
     
     # 3. 绘制 Naive NTD
-    ax.plot(df['epoch'], df['ntd_naive'], color='#ff7f0e', linestyle='-', linewidth=2.5, label='Dynamic NTD')
+    ax.plot(df['epoch'], df['ntd_naive'], color='#ff7f0e', linestyle='-', label='Dynamic NTD')
     
-    # 4. 绘制 Robust NTD (已移除)
-    # ax.plot(df['epoch'], df['ntd_robust'], color='#2ca02c', linestyle='-', linewidth=3, label='Robust NTD (P95-based)')
-    
-    # 5. 绘制攻击信号 (散点示意)
-    # 只在攻击阶段画一些高的点表示攻击输入
+    # 4. 绘制攻击信号 (散点示意)
     attack_phase = df[df['attack_active'] == 1]
     if not attack_phase.empty:
-        # 随机采样一些点画在上面，示意攻击强度
-        # 为了不让图太乱，只画一部分
         sample_indices = np.random.choice(attack_phase.index, 50)
         x_scatter = sample_indices
         y_scatter = np.random.uniform(15, 20, 50)
         ax.scatter(x_scatter, y_scatter, color='#d62728', alpha=0.3, s=30, marker='x', label='Attack Paths (15-20 hops)')
 
-    # 装饰
-    ax.set_title('Dynamic NTD Adaptation under 10% Long-Range Attack', fontsize=22, fontweight='bold')
-    ax.set_xlabel('Epochs', fontsize=22)
-    ax.set_ylabel('NTD Value', fontsize=22)
+    # 应用标准格式化
+    format_axes(ax, xlabel='Epoch', ylabel='NTD', grid=True)
     
     # 强制纵坐标为整数
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     
     ax.legend(loc='upper right', fontsize=16, frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
     
-    # 标注阶段 (已移除)
-    # ax.text(15, 22, 'Phase A:\nConvergence', ha='center', fontsize=16, fontweight='bold', color='#2c3e50')
-    # ax.text(50, 22, 'Phase B:\nAttack Challenge', ha='center', fontsize=16, fontweight='bold', color='#d62728')
-    # ax.text(85, 22, 'Phase C:\nRecovery', ha='center', fontsize=16, fontweight='bold', color='#2c3e50')
-    
-    # 边框设置
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    ax.spines['left'].set_color('black')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_color('black')
-    ax.spines['right'].set_color('black')
-    
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    # 应用图形背景格式
+    format_figure(fig)
+    format_axes_background(ax)
     
     # 保存
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -160,8 +119,9 @@ def plot_ntd_dynamics(df):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     output_path = os.path.join(output_dir, 'ntd_dynamics_simulation.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Plot saved to: {output_path}")
+    plt.close()
 
 if __name__ == "__main__":
     df = simulate_ntd_dynamics()

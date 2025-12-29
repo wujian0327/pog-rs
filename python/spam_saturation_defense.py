@@ -3,21 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-# 设置科研风格
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 100
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 11
-plt.rcParams['axes.titlesize'] = 12
-plt.rcParams['xtick.labelsize'] = 9
-plt.rcParams['ytick.labelsize'] = 9
-plt.rcParams['legend.fontsize'] = 10
-plt.rcParams['lines.linewidth'] = 2.5
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.4
+from plot_style import set_plot_style, format_axes, format_figure, format_axes_background
+
+set_plot_style('paper')
 
 def pog_logarithmic_saturation(raw_score, k_sat=1.0, k_base=1.0):
     """
@@ -115,16 +103,13 @@ def plot_spam_saturation():
                     interpolate=True, color='red', alpha=0.1, label='Net Loss Area')
     
     # 装饰
-    ax.set_xlabel('Spam Attack Intensity', fontsize=22, fontweight='bold')
-    ax.set_ylabel('Economic Value (Tokens)', fontsize=22, fontweight='bold')
-    ax.set_title('Spam Saturation Defense', fontsize=22, fontweight='bold', pad=20)
+    format_axes(ax, xlabel='Spam Attack Intensity', ylabel='Economic Value (Tokens)', grid=True)
     
-    ax.tick_params(axis='both', labelsize=18)
+    ax.tick_params(axis='both')
     
-    # 强化边框
-    for spine in ax.spines.values():
-        spine.set_linewidth(1.5)
-        spine.set_color('black')
+    # 应用图形背景格式
+    format_figure(fig)
+    format_axes_background(ax)
         
     # 寻找盈亏平衡点
     # 找到 Cost > Revenue 的第一个点
@@ -150,8 +135,9 @@ def plot_spam_saturation():
         os.makedirs(output_dir)
         
     output_path = os.path.join(output_dir, 'spam_saturation_defense.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Figure saved to: {output_path}")
+    plt.close()
 
 if __name__ == "__main__":
     try:

@@ -6,21 +6,10 @@ import numpy as np
 import os
 import json
 
-# 设置科研风格
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 100
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 22
-plt.rcParams['axes.titlesize'] = 22
-plt.rcParams['xtick.labelsize'] = 18
-plt.rcParams['ytick.labelsize'] = 18
-plt.rcParams['legend.fontsize'] = 22
-plt.rcParams['lines.linewidth'] = 2.5
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.4
+from plot_style import set_plot_style, format_axes, format_figure, format_axes_background
+
+# 设置论文风格（大号字体）
+set_plot_style('paper')
 
 
 def generate_or_load_graph(node_num=100, m=2, seed=888, use_file=False):
@@ -165,9 +154,8 @@ def plot_simulation(df, omega):
                 line_kws={'color': 'red', 'label': f'Coefficient={corr:.2f}'},
                 color='#2c3e50', x_jitter=0.2) # 添加一点 jitter 防止点重叠
     
-    ax.set_title(f'POG Topology Bias', fontsize=22, fontweight='bold')
-    ax.set_xlabel('Node Degree', fontsize=22)
-    ax.set_ylabel('Block Production Probability', fontsize=22)
+    # ax.set_title(f'POG Topology Bias', fontsize=22, fontweight='bold')
+    format_axes(ax, xlabel='Node Degree', ylabel='Block Production Probability', grid=True)
     
     # 添加注释说明
     # ax.text(0.05, 0.95, 
@@ -179,23 +167,13 @@ def plot_simulation(df, omega):
     #         fontsize=12, verticalalignment='top',
     #         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
-    ax.legend( loc='upper left', fontsize=16, frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
+    ax.legend(loc='upper left', fontsize=22, frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
     ax.grid(True, alpha=0.5, linestyle='--', linewidth=0.7, color='gray')
     ax.set_axisbelow(True)
 
-    # 强化所有轴为实线
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    ax.spines['left'].set_color('black')
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_color('black')
-    ax.spines['right'].set_color('black')
-    
-    # 使用白色背景
-    fig.patch.set_facecolor('white')
-    ax.set_facecolor('white')
+    # 应用图形背景格式
+    format_figure(fig)
+    format_axes_background(ax)
 
     # 保存
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -204,8 +182,9 @@ def plot_simulation(df, omega):
         os.makedirs(output_dir)
         
     output_path = os.path.join(output_dir, 'topology_bias.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Simulation plot saved to: {output_path}")
+    plt.close()
 
 if __name__ == "__main__":
     try:

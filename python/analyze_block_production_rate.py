@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-# 设置matplotlib的样式
-mpl.rcParams['font.sans-serif'] = ['DejaVu Sans']
-mpl.rcParams['axes.unicode_minus'] = False
+from plot_style import set_plot_style, get_colors_and_styles, format_axes, format_figure, format_axes_background
+
+set_plot_style('paper')
 
 def generate_block_production_data():
     """
@@ -30,35 +30,21 @@ def create_block_production_rate_figure():
     
     # 创建图表
     fig, ax = plt.subplots(figsize=(10, 8))
+    colors, linestyles, markers = get_colors_and_styles()
     
     # 绘制三条曲线
     ax.plot(offline_rates, pog_rates, 
-            color='#1f77b4', linewidth=2.5, linestyle='-', 
-            marker='o', markersize=8, label='PoG', zorder=3)
+            color=colors['pog'],  linestyle=linestyles['pog'], 
+            marker=markers['pog'],  label='PoG', zorder=3)
     
     ax.plot(offline_rates, pos_rates, 
-            color='#2ca02c', linewidth=2.5, linestyle='--', 
-            marker='s', markersize=8, label='PoS', zorder=3)
+            color=colors['pos'], linestyle=linestyles['pos'], 
+            marker=markers['pos'],label='PoS', zorder=3)
 
     
-    # 设置网格
-    ax.grid(True, linestyle='--', alpha=0.5, linewidth=0.7, zorder=1)
-    ax.set_axisbelow(True)
-    
-    # 设置轴样式
-    ax.spines['top'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['right'].set_linewidth(1.5)
-    
-    # 设置标签字体大小
-    ax.set_xlabel('Offline probability per node per epoch (%)', fontsize=22, fontweight='normal')
-    ax.set_ylabel('Block production success rate (%)', fontsize=22, fontweight='normal')
-    # ax.set_title('Impact of offline probability on block production', fontsize=22, fontweight='normal', pad=20)
-    
-    # 设置坐标轴刻度字体大小
-    ax.tick_params(axis='x', labelsize=18)
-    ax.tick_params(axis='y', labelsize=18)
+    # 应用标准格式化
+    format_axes(ax, xlabel='Offline Probability(%)', 
+                ylabel='Block Production ate(%)', grid=True)
     
     # 设置坐标轴范围
     ax.set_xlim(-2, 52)
@@ -67,13 +53,18 @@ def create_block_production_rate_figure():
     # 设置图例
     ax.legend(fontsize=26, loc='best', frameon=True, fancybox=False, edgecolor='black')
     
+    # 应用图形背景格式
+    format_figure(fig)
+    format_axes_background(ax)
+    
     plt.tight_layout()
     project_root = get_project_root()
     output_file = os.path.join(project_root, 'figures', 'block_production_rate.png')
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
     print("[1/1] Block production rate figure generated successfully!")
-    print("      Figure saved as: block_production_rate.png")
-    plt.show()
+    print(f"      Figure saved as: {output_file}")
+    plt.close()
 
 def get_project_root():
     """自动查找项目根目录，通过寻找 Cargo.toml 文件"""

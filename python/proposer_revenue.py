@@ -3,21 +3,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-# 设置科研风格
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 100
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 11
-plt.rcParams['axes.titlesize'] = 12
-plt.rcParams['xtick.labelsize'] = 9
-plt.rcParams['ytick.labelsize'] = 9
-plt.rcParams['legend.fontsize'] = 10
-plt.rcParams['lines.linewidth'] = 2.5
-plt.rcParams['axes.grid'] = True
-plt.rcParams['grid.alpha'] = 0.4
+from plot_style import set_plot_style, format_axes, format_figure, format_axes_background
+
+# 设置论文风格（大号字体）
+set_plot_style('paper')
 
 def compute_penalty_factor(avg_path_length, ntd=10):
     """
@@ -120,16 +109,14 @@ def plot_proposer_revenue():
     # ax.plot(df['Length'], y3, color='black', linewidth=1.5)
     
     # 装饰
-    ax.set_xlabel('Average Block Transaction Path Length', fontsize=22, fontweight='bold')
-    ax.set_ylabel('Revenue Distribution', fontsize=22, fontweight='bold')
-    ax.set_title('Revenue Distribution', fontsize=22, fontweight='bold', pad=20)
+    format_axes(ax, xlabel='Average Block Transaction Path Length', 
+                ylabel='Revenue Distribution', grid=True)
     
-    ax.tick_params(axis='both', labelsize=18)
+    ax.tick_params(axis='both')
     
-    # 强化边框
-    for spine in ax.spines.values():
-        spine.set_linewidth(1.5)
-        spine.set_color('black')
+    # 应用图形背景格式
+    format_figure(fig)
+    format_axes_background(ax)
 
     # NTD 线
     ax.axvline(x=ntd, color='black', linestyle='--', linewidth=2, alpha=0.5)
@@ -141,7 +128,7 @@ def plot_proposer_revenue():
              fontsize=16, color='black', fontweight='bold')
 
     # 图例
-    ax.legend(fontsize=16, loc='upper right', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
+    ax.legend(fontsize=22, loc='upper right', frameon=True, fancybox=False, edgecolor='black', framealpha=0.95)
     
     ax.grid(True, alpha=0.4, linestyle='--', linewidth=0.7, color='gray')
     
@@ -151,8 +138,9 @@ def plot_proposer_revenue():
         os.makedirs(output_dir)
         
     output_path = os.path.join(output_dir, 'proposer_revenue.png')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Figure saved to: {output_path}")
+    plt.close()
 
 if __name__ == "__main__":
     try:
