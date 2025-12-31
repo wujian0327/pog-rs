@@ -419,10 +419,10 @@ mod tests {
 
         let paths = vec![aggregated_signed_paths.paths];
 
-        let v1 = Validator::new(wallet.address, 1.0);
-        let v2 = Validator::new(wallet2.address, 2.0);
-        let v3 = Validator::new(wallet3.address, 3.0);
-        let miner_v = Validator::new(miner.address, 4.0);
+        let v1 = Validator::new(wallet.address, 1.0, 1.0);
+        let v2 = Validator::new(wallet2.address, 2.0, 1.0);
+        let v3 = Validator::new(wallet3.address, 3.0, 1.0);
+        let miner_v = Validator::new(miner.address, 4.0, 1.0);
         let validators = vec![v1, v2, v3, miner_v];
 
         let mut pog = PogConsensus::new(3, 1.0);

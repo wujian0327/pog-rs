@@ -147,7 +147,6 @@ impl Consensus for PowConsensus {
         let should_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut handles = vec![];
 
-        let max_attempts = 100_000_000u64;
         let start_time = std::time::Instant::now();
         let slot_duration = self.slot_duration;
 
@@ -163,6 +162,16 @@ impl Consensus for PowConsensus {
                 let difficulty = self.difficulty;
                 let seed = combines_seed;
 
+                // 恢复为固定的最大尝试次数，不再通过次数限制算力
+                let max_attempts = 100_000_000u64;
+
+                // 算力模拟参数
+                // 基础休眠时间（微秒）：算力为 1.0 的节点每 batch 需要休眠的时间
+                // 调整这个值可以控制整体的出块速度模拟
+                // 为了避免操作系统调度精度问题（通常 >1ms），这里使用较大的 batch 和 sleep 时间
+                let base_sleep_micros = 5_000.0; // 5ms
+                let batch_size = 5_000; // 每计算 5,000 次哈希检查一次休眠
+
                 let handle = thread::spawn(move || {
                     // 这里只是模拟pow运算，并没有使用节点的交易数据
                     // this is just a simulation of PoW mining without using the node's transaction data
@@ -175,6 +184,17 @@ impl Consensus for PowConsensus {
                         // 检查是否应该停止（获胜者已产生或超时）
                         if should_stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
                             return;
+                        }
+
+                        // 模拟算力差异：速率限制
+                        if nonce % batch_size == 0 {
+                            // 算力越高，sleep 时间越短
+                            // sleep_time = base / hash_power
+                            let sleep_duration =
+                                (base_sleep_micros / validator_clone.hash_power) as u64;
+                            if sleep_duration > 0 {
+                                thread::sleep(Duration::from_micros(sleep_duration));
+                            }
                         }
 
                         let mut hasher = Sha256::new();
@@ -190,8 +210,8 @@ impl Consensus for PowConsensus {
                                 if winner_guard.is_none() {
                                     *winner_guard = Some(validator_clone.clone());
                                     info!(
-                                        "PoW: Validator {} won with nonce {}",
-                                        validator_clone.address, nonce
+                                        "PoW: Validator {} won with nonce {}, pow power {:.2}",
+                                        validator_clone.address, nonce, validator_clone.hash_power
                                     );
                                     // 通知其他线程停止
                                     should_stop_clone

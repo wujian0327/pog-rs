@@ -39,6 +39,7 @@ pub struct Node {
     pub max_tx_per_block: usize,  // 每个区块最大交易数量
     pub consensus: ConsensusType, // 共识算法类型
     pub max_mempool_size: usize,  // 内存池最大容量
+    pub hash_power: f64,          // 节点算力
 }
 
 #[derive(Clone)]
@@ -106,6 +107,7 @@ impl Node {
             max_tx_per_block,
             consensus,
             max_mempool_size: max_tx_per_block,
+            hash_power: 1.0,
         }
     }
 
@@ -142,6 +144,7 @@ impl Node {
             max_tx_per_block,
             consensus,
             max_mempool_size: max_tx_per_block,
+            hash_power: 1.0,
         }
     }
 
@@ -199,6 +202,7 @@ impl Node {
             max_tx_per_block,
             consensus,
             max_mempool_size: max_tx_per_block,
+            hash_power: 1.0,
         }
     }
 
@@ -208,6 +212,10 @@ impl Node {
 
     pub fn set_offline_probability(&mut self, probability: f64) {
         self.offline_probability = probability.clamp(0.0, 1.0);
+    }
+
+    pub fn set_hash_power(&mut self, hash_power: f64) {
+        self.hash_power = hash_power;
     }
 
     pub async fn create_block_template(&self, epoch: u64, slot: u64) -> Result<Block, BlockError> {
@@ -537,7 +545,7 @@ impl Node {
                     {
                         let transactions_cache = self.transaction_paths_cache.read().await;
                         let tx_hash = &transaction_paths.transaction.hash;
-                        
+
                         if let Some(cached_tx) = transactions_cache.get(tx_hash) {
                             if self.consensus == ConsensusType::POG {
                                 // POG: 只有当缓存的路径长度更短或相等时才跳过
@@ -876,8 +884,8 @@ impl Node {
                     self.set_balance(my_stake);
 
                     info!(
-                        "Node[{}] with address[{}] becomes validator with stake {}",
-                        self.index, self.wallet.address, my_stake
+                        "Node[{}] with address[{}] becomes validator with stake {} and pow power {}",
+                        self.index, self.wallet.address, my_stake, self.hash_power
                     );
                     match self.node_type {
                         NodeType::Honest => {
@@ -885,6 +893,7 @@ impl Node {
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
                                     my_stake,
+                                    self.hash_power,
                                 )))
                                 .await
                                 .unwrap();
@@ -894,6 +903,7 @@ impl Node {
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
                                     my_stake,
+                                    self.hash_power,
                                 )))
                                 .await
                                 .unwrap();
@@ -903,6 +913,7 @@ impl Node {
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
                                     my_stake,
+                                    self.hash_power,
                                 )))
                                 .await
                                 .unwrap();
@@ -916,6 +927,7 @@ impl Node {
                                 .send(Message::new_receive_become_validator_msg(Validator::new(
                                     self.wallet.address.clone(),
                                     stake,
+                                    self.hash_power,
                                 )))
                                 .await
                                 .unwrap();
@@ -923,7 +935,11 @@ impl Node {
                                 // 处理 sybil
                                 self.world_state_sender
                                     .send(Message::new_receive_become_validator_msg(
-                                        Validator::new(sybil.wallet.address.clone(), stake),
+                                        Validator::new(
+                                            sybil.wallet.address.clone(),
+                                            stake,
+                                            sybil.hash_power,
+                                        ),
                                     ))
                                     .await
                                     .unwrap();

@@ -57,6 +57,9 @@ def create_gini_line_figure(dataframes_dict):
         if df is not None and len(df) > 0:
             gini = df['gini_coefficient'].values
             
+            # 计算累计平均值
+            # cumulative_mean = np.cumsum(gini) / np.arange(1, len(gini) + 1)
+            
             ax.plot(df.index, gini, 
                    label=f'{ct.upper()}',
                    color=colors.get(ct, '#000000'), 

@@ -45,7 +45,7 @@ struct Args {
     slot_per_epoch: u64,
 
     /// PoW初始难度 (PoW initial difficulty)
-    #[clap(long, default_value = "28")]
+    #[clap(long, default_value = "20")]
     pow_difficulty: usize,
 
     /// PoW最大线程数 (PoW max threads)

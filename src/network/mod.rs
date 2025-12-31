@@ -62,8 +62,18 @@ pub async fn start_network(
 
     //3. nodes
     let total_nodes = node_num + sybil_node_num + unstable_node_num;
+
+    // Generate hash power distribution based on gini
+    // We use the same distribution logic as stake for hash power
+    let hash_power_values = if gini > 0.0 {
+        crate::metrics::generate_stake_by_gini(total_nodes, gini)
+    } else {
+        vec![1.0; total_nodes as usize]
+    };
+
     let mut node_map: HashMap<String, Node> = (0..total_nodes)
         .map(|i| {
+            let hash_power = hash_power_values.get(i as usize).cloned().unwrap_or(1.0);
             if i < node_num {
                 // Honest nodes
                 let mut node = Node::new(
@@ -77,6 +87,7 @@ pub async fn start_network(
                     wallet_seed,
                 );
                 node.set_transaction_fee(transaction_fee);
+                node.set_hash_power(hash_power);
                 node.simple_print();
                 (node.get_address(), node)
             } else if i < node_num + sybil_node_num {
@@ -93,6 +104,7 @@ pub async fn start_network(
                     wallet_seed,
                 );
                 node.set_transaction_fee(transaction_fee);
+                node.set_hash_power(hash_power);
                 node.simple_print();
                 (node.get_address(), node)
             } else {
@@ -110,6 +122,7 @@ pub async fn start_network(
                 node.set_node_type(NodeType::Unstable);
                 node.set_offline_probability(offline_probability);
                 node.set_transaction_fee(transaction_fee);
+                node.set_hash_power(hash_power);
                 node.simple_print();
                 (node.get_address(), node)
             }

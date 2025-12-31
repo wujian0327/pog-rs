@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
+pub mod minotaur;
 pub mod pog;
 pub mod pos;
 pub mod pow;
@@ -96,15 +97,20 @@ pub fn combine_seed(validators: Vec<Validator>, vdf_seeds: Vec<RandaoSeed>) -> [
 pub struct Validator {
     pub address: String,
     pub stake: f64,
+    pub hash_power: f64,
 }
 
 impl Validator {
-    pub fn new(address: String, stake: f64) -> Self {
-        Validator { address, stake }
+    pub fn new(address: String, stake: f64, hash_power: f64) -> Self {
+        Validator {
+            address,
+            stake,
+            hash_power,
+        }
     }
 
     pub fn from_node(node: Node, stake: f64) -> Self {
-        Validator::new(node.wallet.address.clone(), stake)
+        Validator::new(node.wallet.address.clone(), stake, node.hash_power)
     }
 
     pub fn from_json(json: Vec<u8>) -> Result<Validator, ValidatorError> {
