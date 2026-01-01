@@ -21,6 +21,7 @@ pub enum ConsensusType {
     POS,
     POG,
     POW,
+    MINOTAUR,
 }
 
 impl Display for ConsensusType {
@@ -34,6 +35,9 @@ impl Display for ConsensusType {
             }
             ConsensusType::POW => {
                 write!(f, "pow")
+            }
+            ConsensusType::MINOTAUR => {
+                write!(f, "minotaur")
             }
         }
     }

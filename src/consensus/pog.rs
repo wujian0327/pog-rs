@@ -12,10 +12,10 @@ pub struct PogConsensus {
     // Temporal smoothing state: Score(n,t) for each node
     score_history: HashMap<String, f64>,
     // Parameters for contribution calculation
-    alpha: f64,  // EMA smoothing factor, default 0.2
-    k_sat: f64,  // Logarithmic saturation scale, default 1.0
-    k_base: f64, // Saturation base, default 1.0
-    omega: f64,  // Consensus weight balance, starts at 0 (pure PoS), increases toward 1
+    alpha: f64,
+    k_sat: f64,
+    k_base: f64,
+    omega: f64,
 }
 
 impl PogConsensus {
