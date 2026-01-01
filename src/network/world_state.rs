@@ -1,9 +1,9 @@
 use crate::blockchain::block::Block;
 use crate::blockchain::{BlockChainError, Blockchain};
+use crate::consensus::minotaur::MinotaurConsensus;
 use crate::consensus::pog::PogConsensus;
 use crate::consensus::pos::PosConsensus;
 use crate::consensus::pow::PowConsensus;
-use crate::consensus::minotaur::MinotaurConsensus;
 use crate::consensus::{Consensus, ConsensusType, RandaoSeed, Validator};
 use crate::metrics::{self, calculate_stake_concentration, SlotMetrics};
 use crate::network::message::{Message, MessageType};
