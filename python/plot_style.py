@@ -72,9 +72,9 @@ def get_colors_and_styles():
             - linestyles_dict: 共识类型到线条样式的映射
             - markers_dict: 共识类型到标记符号的映射
     """
-    colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728'}
-    linestyles = {'pog': '-', 'pos': '--', 'pow': '-.'}
-    markers = {'pog': 's', 'pos': 'o', 'pow': '^'}
+    colors = {'pog': '#1f77b4', 'pos': '#2ca02c', 'pow': '#d62728', 'minotaur': '#9467bd'}
+    linestyles = {'pog': '-', 'pos': '--', 'pow': '-.', 'minotaur': ':'}
+    markers = {'pog': 's', 'pos': 'o', 'pow': '^', 'minotaur': 'D'}
     
     return colors, linestyles, markers
 

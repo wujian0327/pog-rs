@@ -165,7 +165,15 @@ pub fn calculate_gini(values: &[f64]) -> f64 {
 
 /// 根据目标Gini系数生成权益分配
 /// 返回长度为node_num的权益数组
-pub fn generate_stake_by_gini(node_num: u32, target_gini: f64) -> Vec<f64> {
+///
+/// # 参数
+/// * `node_num`: 节点数量
+/// * `target_gini`: 目标Gini系数（0-1，越接近1越不平等）
+/// * `gini_seed`: 随机种子，用于打乱顺序
+pub fn generate_stake_by_gini(node_num: u32, target_gini: f64, gini_seed: u64) -> Vec<f64> {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
     let n = node_num as usize;
     if n == 0 {
         return vec![];
@@ -210,6 +218,23 @@ pub fn generate_stake_by_gini(node_num: u32, target_gini: f64) -> Vec<f64> {
     let sum: f64 = stakes.iter().sum();
     let scale_factor = n as f64 / sum;
     stakes.iter_mut().for_each(|s| *s *= scale_factor);
+
+    let mut rng = StdRng::seed_from_u64(gini_seed);
+
+    let sort_keys: Vec<f64> = (0..n).map(|_| rng.gen::<f64>()).collect();
+
+    let mut indexed_stakes: Vec<(usize, f64)> =
+        stakes.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+
+    indexed_stakes.sort_by(|a, b| {
+        let key_a = sort_keys[a.0] + a.1 * 0.3;
+        let key_b = sort_keys[b.0] + b.1 * 0.3;
+        key_a
+            .partial_cmp(&key_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    stakes = indexed_stakes.into_iter().map(|(_, v)| v).collect();
 
     stakes
 }

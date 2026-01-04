@@ -63,17 +63,17 @@ pub async fn start_network(
     //3. nodes
     let total_nodes = node_num + sybil_node_num + unstable_node_num;
 
-    // Generate hash power distribution based on gini
-    // We use the same distribution logic as stake for hash power
-    let hash_power_values = if gini > 0.0 {
-        crate::metrics::generate_stake_by_gini(total_nodes, gini)
+    // Generate stake distribution based on gini with wallet_seed for shuffling
+    let stake_values = if gini > 0.0 {
+        crate::metrics::generate_stake_by_gini(total_nodes, gini, wallet_seed)
     } else {
+        // Default: equal stakes
         vec![1.0; total_nodes as usize]
     };
 
     let mut node_map: HashMap<String, Node> = (0..total_nodes)
         .map(|i| {
-            let hash_power = hash_power_values.get(i as usize).cloned().unwrap_or(1.0);
+            let hash_power = stake_values.get(i as usize).cloned().unwrap_or(1.0);
             if i < node_num {
                 // Honest nodes
                 let mut node = Node::new(
@@ -140,8 +140,8 @@ pub async fn start_network(
         .collect();
     world.nodes_index = nodes_index.clone();
 
-    let mut nodes_address: Vec<String> = node_map.keys().cloned().collect();
-    nodes_address.sort();
+    let nodes_address: Vec<String> = node_map.keys().cloned().collect();
+    // nodes_address.sort();
     info!(
         "Generate {} honest nodes, {} sybil nodes, {} unstable nodes",
         node_num, sybil_node_num, unstable_node_num
@@ -216,29 +216,15 @@ pub async fn start_network(
     });
     tasks.push(t);
 
-    for (_, mut node) in node_map {
-        let t = tokio::spawn(async move {
-            info!("Node[{}] running", node.index);
-            node.run().await;
-        });
-        tasks.push(t);
-    }
-
     //become validator
-    // Generate stake distribution based on gini
-    let stake_values = if gini > 0.0 {
-        crate::metrics::generate_stake_by_gini(total_nodes, gini)
-    } else {
-        // Default: equal stakes
-        vec![1.0; total_nodes as usize]
-    };
-
-    // Create address -> stake mapping
+    // Create address -> stake mapping using node.index to match hash_power assignment
     let mut stake_map: HashMap<String, f64> = HashMap::new();
-    for (i, address) in nodes_address.iter().enumerate() {
-        if i < stake_values.len() {
-            stake_map.insert(address.clone(), stake_values[i]);
-        }
+    for (address, node) in node_map.iter() {
+        let stake = stake_values
+            .get(node.index as usize)
+            .cloned()
+            .unwrap_or(1.0);
+        stake_map.insert(address.clone(), stake);
     }
 
     // Convert to JSON and send to all nodes
@@ -249,6 +235,14 @@ pub async fn start_network(
         // Create modified become_validator message with stake data
         let msg = Message::new_become_validator_msg(stake_json.clone());
         sender.send(msg).await.unwrap();
+    }
+
+    for (_, mut node) in node_map {
+        let t = tokio::spawn(async move {
+            info!("Node[{}] running", node.index);
+            node.run().await;
+        });
+        tasks.push(t);
     }
 
     let mut tg = TransactionGenerator::new(

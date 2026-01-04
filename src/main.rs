@@ -33,7 +33,7 @@ struct Args {
     offline_probability: f64,
 
     /// 每秒交易个数（泊松分布）(Number of transactions per second)
-    #[clap(short, long, default_value = "50")]
+    #[clap(short, long, default_value = "10")]
     trans_num: u32,
 
     /// 时隙持续时间（秒）(Slot duration in seconds)

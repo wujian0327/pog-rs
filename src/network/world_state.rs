@@ -120,6 +120,7 @@ impl WorldState {
 
     pub async fn next_slot(&mut self) {
         let current_slot = self.current_slot.read().await.clone();
+        let block_index = self.blockchain.read().await.get_last_index();
         //计算randao seed
         let validators = self.validators.read().await.clone();
         let next_seed = consensus::combine_seed(validators.clone(), current_slot.randao_seeds);
@@ -137,6 +138,7 @@ impl WorldState {
                 start_timestamp: get_timestamp(),
             }));
         }
+        self.consensus.next_slot(&validators, block_index);
         let current_slot = self.get_current_slot().await;
         info!(
             "World State change slot to: epoch[{}] slot[{}] consensus[{}] seed{:?}",

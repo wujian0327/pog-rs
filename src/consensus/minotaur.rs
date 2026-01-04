@@ -1,37 +1,38 @@
 use crate::blockchain::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::{Consensus, Validator, ValidatorError};
-use log::{debug, info};
+use log::{debug, info, warn};
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-/// PoW块数据结构：存储节点在某个slot的PoW计算结果
+/// PoW块数据结构：存储节点在某个index的PoW计算结果
 #[derive(Debug, Clone)]
 pub struct PowBlock {
-    /// 节点地址
     pub address: String,
-    /// 在该slot中计算得到的哈希值数量（代表算力）
     pub hash_count: u64,
-    /// slot编号
-    pub slot: u64,
-    /// nonce值（用于验证工作量）
+    pub index: u64,
     pub nonce: u64,
+    pub max_difficulty: u64,
 }
 
 /// Minotaur共识：Multi-Resource Blockchain Consensus
 /// 结合了PoW算力证明和PoS权益证明的混合共识机制
 /// 核心原则：所有计算都是有效的，直接累积计算工作量，不需要满足难度目标
 /// 每个slot中，节点进行PoW运算并存储计算结果到pow_blocks中
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MinotaurConsensus {
-    /// 存储每个slot的PoW块数据：key为slot编号
     pow_blocks: HashMap<u64, Vec<PowBlock>>,
-    /// base reward for block production
     base_reward: f64,
-    /// PoW与PoS的权重参数（0-1之间），0表示纯PoS，1表示纯PoW
     pow_weight: f64,
+    block_index: u64,
+    /// 后台计算任务：存储线程句柄和结果存储位置
+    background_task: Arc<Mutex<Option<(u64, JoinHandle<Vec<PowBlock>>, Arc<AtomicBool>)>>>,
 }
 
 impl MinotaurConsensus {
@@ -41,17 +42,14 @@ impl MinotaurConsensus {
             pow_blocks: HashMap::new(),
             base_reward,
             pow_weight: 0.5, // 默认50%权重
+            block_index: 0,
+            background_task: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// 进行PoW计算（Minotaur风格）：累积所有计算尝试
-    /// 论文中不需要验证难度，而是直接计算总的哈希尝试次数
-    /// 返回进行的总尝试次数（即工作量）
-    pub fn perform_pow_computation(&self, address: &str, slot: u64, max_attempts: u64) -> u64 {
-        // Minotaur: 所有计算都计数，不需要验证难度
-        // 节点可以根据自己的算力进行任意数量的计算
-        // 返回实际进行的计算次数（工作量）
-
+    /// 执行PoW计算：计算指定次数的哈希
+    #[allow(dead_code)]
+    fn perform_pow_computation(&self, address: &str, slot: u64, max_attempts: u64) -> u64 {
         let mut hash_count = 0u64;
         for nonce in 0..max_attempts {
             hash_count += 1;
@@ -59,118 +57,36 @@ impl MinotaurConsensus {
             hasher.update(address.as_bytes());
             hasher.update(slot.to_le_bytes());
             hasher.update(nonce.to_le_bytes());
-            let _hash = hasher.finalize(); // 计算但不校验难度
+            let _hash = hasher.finalize();
         }
         hash_count
     }
 
-    /// 添加PoW块到指定slot
+    /// 计算哈希的难度（leading zeros 的数量）
+    fn calculate_difficulty(hash: &[u8]) -> u64 {
+        let mut difficulty = 0u64;
+        for byte in hash {
+            if *byte == 0 {
+                difficulty += 8;
+            } else {
+                difficulty += byte.leading_zeros() as u64;
+                break;
+            }
+        }
+        difficulty
+    }
+
+    /// 添加PoW块
     pub fn add_pow_block(&mut self, block: PowBlock) {
         self.pow_blocks
-            .entry(block.slot)
+            .entry(block.index)
             .or_insert_with(Vec::new)
             .push(block);
     }
 
-    /// 获取某个slot的PoW块列表
-    pub fn get_pow_blocks(&self, slot: u64) -> Vec<PowBlock> {
-        self.pow_blocks.get(&slot).cloned().unwrap_or_default()
-    }
-
-    /// 清理旧的PoW块（保留最近N个slot的数据）
-    pub fn cleanup_old_pow_blocks(&mut self, keep_slots: u64) {
-        if self.pow_blocks.is_empty() {
-            return;
-        }
-
-        let max_slot = *self.pow_blocks.keys().max().unwrap();
-        let min_slot_to_keep = max_slot.saturating_sub(keep_slots);
-
-        self.pow_blocks.retain(|slot, _| *slot >= min_slot_to_keep);
-    }
-
-    /// 计算节点的PoW贡献分数（基于平均hash数量）
-    fn calculate_pow_score(&self, address: &str, _slots_to_check: u64) -> f64 {
-        let mut total_hashes = 0u64;
-        let mut count = 0u64;
-
-        for pow_block in self.pow_blocks.values().flat_map(|v| v.iter()) {
-            if pow_block.address == address {
-                total_hashes += pow_block.hash_count;
-                count += 1;
-            }
-        }
-
-        if count == 0 {
-            return 0.0;
-        }
-
-        (total_hashes as f64) / (count as f64)
-    }
-
-    /// 混合选择proposer：基于PoW贡献和PoS权益
-    fn select_with_hybrid_approach(
-        &self,
-        validators: Vec<Validator>,
-        combines_seed: [u8; 32],
-    ) -> Result<Validator, ValidatorError> {
-        if validators.is_empty() {
-            return Err(ValidatorError::NOValidatorError);
-        }
-
-        // 计算每个验证者的混合权重
-        let total_stake: f64 = validators.iter().map(|v| v.stake).sum();
-        let mut hybrid_weights: HashMap<String, f64> = HashMap::new();
-
-        // 计算PoS权重（基于stake）
-        for validator in &validators {
-            let pos_weight = if total_stake > 0.0 {
-                validator.stake / total_stake
-            } else {
-                1.0 / validators.len() as f64
-            };
-
-            // 计算PoW权重（基于计算贡献）
-            let pow_score = self.calculate_pow_score(&validator.address, 10);
-            let total_pow_score: f64 = validators
-                .iter()
-                .map(|v| self.calculate_pow_score(&v.address, 10))
-                .sum();
-            let pow_weight = if total_pow_score > 0.0001 {
-                pow_score / total_pow_score
-            } else {
-                1.0 / validators.len() as f64
-            };
-
-            // 混合权重：加权平均
-            let hybrid_weight = (1.0 - self.pow_weight) * pos_weight + self.pow_weight * pow_weight;
-            hybrid_weights.insert(validator.address.clone(), hybrid_weight);
-
-            debug!(
-                "Validator {} - PoS: {:.6}, PoW: {:.6}, Hybrid: {:.6}",
-                validator.address, pos_weight, pow_weight, hybrid_weight
-            );
-        }
-
-        // 基于混合权重进行概率选择
-        let total_hybrid_weight: f64 = hybrid_weights.values().sum();
-        let mut rng = StdRng::from_seed(combines_seed);
-        let random_value = rng.gen_range(0.0..total_hybrid_weight.max(0.0001));
-
-        let mut accumulated_weight = 0.0;
-        for validator in validators {
-            let weight = hybrid_weights.get(&validator.address).unwrap_or(&0.0);
-            accumulated_weight += weight;
-            if accumulated_weight >= random_value {
-                info!(
-                    "Minotaur: Proposer {} elected with hybrid weight {:.6}",
-                    validator.address, weight
-                );
-                return Ok(validator);
-            }
-        }
-
-        Err(ValidatorError::NOValidatorError)
+    /// 获取指定index的PoW块列表
+    pub fn get_pow_blocks(&self, index: u64) -> Vec<PowBlock> {
+        self.pow_blocks.get(&index).cloned().unwrap_or_default()
     }
 }
 
@@ -185,13 +101,100 @@ impl Consensus for MinotaurConsensus {
         combines_seed: [u8; 32],
         _blockchain: &Blockchain,
     ) -> Result<Validator, ValidatorError> {
-        self.select_with_hybrid_approach(validators.to_vec(), combines_seed)
+        if validators.is_empty() {
+            return Err(ValidatorError::NOValidatorError);
+        }
+        // 实现混合选择逻辑（PoW + PoS）
+        // 查询 最新的pow块
+        if self.block_index == 0 {
+            warn!("Block index is 0, no pow blocks available");
+            return Ok(validators[0].clone());
+        }
+        let pow_blocks = self.get_pow_blocks(self.block_index - 1);
+        if pow_blocks.is_empty() {
+            warn!("No PoW blocks available for index {}", self.block_index - 1);
+        }
+        // 计算每个验证者的pow得分
+        let mut pow_scores: HashMap<String, f64> = HashMap::new();
+        for block in pow_blocks {
+            //score 是2的指数形式
+            let score = 2f64.powf(block.max_difficulty as f64);
+            *pow_scores.entry(block.address.clone()).or_insert(0.0) += score;
+        }
+        debug!("PoW Scores: {:?}", pow_scores);
+        // 计算pow的每个节点的百分比
+        let total_pow_score: f64 = pow_scores.values().sum();
+        let mut pow_ratio_scores: HashMap<String, f64> = HashMap::new();
+        for validator in validators {
+            let pow_score = pow_scores.get(&validator.address).cloned().unwrap_or(0.0);
+            let pow_ratio = if total_pow_score > 0.0 {
+                pow_score / total_pow_score
+            } else {
+                0.0
+            };
+            pow_ratio_scores.insert(validator.address.clone(), pow_ratio);
+        }
+        debug!("PoW Ratio Scores: {:?}", pow_ratio_scores);
+        // 计算pos的权重
+        let total_stake: f64 = validators.iter().map(|v| v.stake).sum();
+        let mut pos_ratio_scores: HashMap<String, f64> = HashMap::new();
+        for validator in validators {
+            let pos_ratio = if total_stake > 0.0 {
+                validator.stake / total_stake
+            } else {
+                0.0
+            };
+            pos_ratio_scores.insert(validator.address.clone(), pos_ratio);
+        }
+        debug!("PoS Ratio Scores: {:?}", pos_ratio_scores);
+        // 根据pow_weight 计算综合得分
+        let mut combined_scores: HashMap<String, f64> = HashMap::new();
+        for validator in validators {
+            let pow_ratio = pow_ratio_scores
+                .get(&validator.address)
+                .cloned()
+                .unwrap_or(0.0);
+            let pos_ratio = pos_ratio_scores
+                .get(&validator.address)
+                .cloned()
+                .unwrap_or(0.0);
+            let combined_score = self.pow_weight * pow_ratio + (1.0 - self.pow_weight) * pos_ratio;
+            combined_scores.insert(validator.address.clone(), combined_score);
+        }
+        debug!("Combined Scores: {:?}", combined_scores);
+        // 将combined_scores 视作vitual_stake,算出出块者
+        let mut rng = StdRng::from_seed(combines_seed);
+        let total_combined_score: f64 = combined_scores.values().sum();
+        let mut pick = rng.gen_range(0.0..total_combined_score);
+        for validator in validators {
+            let score = combined_scores
+                .get(&validator.address)
+                .cloned()
+                .unwrap_or(0.0);
+            let pow_score = pow_ratio_scores
+                .get(&validator.address)
+                .cloned()
+                .unwrap_or(0.0);
+            let pos_score = pos_ratio_scores
+                .get(&validator.address)
+                .cloned()
+                .unwrap_or(0.0);
+            if pick < score {
+                info!(
+                    "Minotaur Selected proposer: {} with virtual stake {:.6},pow_score {:.6},pos_score {:.6}",
+                    validator.address, score, pow_score, pos_score
+                );
+                return Ok(validator.clone());
+            }
+            pick -= score;
+        }
+
+        // 临时返回第一个验证者
+        warn!("Fallback: selecting first validator as proposer");
+        Ok(validators[0].clone())
     }
 
-    fn on_epoch_end(&mut self, _blocks: &[Block]) {
-        // 清理旧的PoW块数据，只保留最近10个slot
-        self.cleanup_old_pow_blocks(10);
-    }
+    fn on_epoch_end(&mut self, _blocks: &[Block]) {}
 
     fn state_summary(&self) -> String {
         format!("minotaur(pow_w:{:.2})", self.pow_weight)
@@ -218,41 +221,178 @@ impl Consensus for MinotaurConsensus {
             );
         }
     }
+
+    fn next_slot(&mut self, validators: &[Validator], block_index: u64) {
+        // Minotaur在这里处理pow_blocks的slot更新逻辑
+        // 在slot开始的时候，保存上一个pow_blocks的数据
+        // 然后开始新的pow运算
+        // 保存此轮计算的结果
+
+        // 第一步：收集上一个后台任务的计算结果
+        let collected_blocks = {
+            let mut task_guard = self.background_task.lock().unwrap();
+            let mut blocks = Vec::new();
+            if let Some((_, handle, stop_flag)) = task_guard.take() {
+                // 发送停止信号给上一个后台任务
+                stop_flag.store(true, Ordering::Relaxed);
+
+                // 等待上一个后台任务完成并收集结果
+                match handle.join() {
+                    Ok(pow_blocks) => {
+                        blocks = pow_blocks;
+                        debug!(
+                            "Collected PoW results from background task: {} blocks",
+                            blocks.len()
+                        );
+                        // 打印一下每个块的信息
+                        for block in &blocks {
+                            debug!(
+                                "  PowBlock: address={}, index={}, hash_count={}, max_difficulty={}",
+                                block.address, block.index, block.hash_count, block.max_difficulty
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        debug!("Failed to join background task");
+                    }
+                }
+            }
+            blocks
+        }; // 释放锁
+
+        // 现在将收集到的块添加到 pow_blocks
+        for block in collected_blocks {
+            self.add_pow_block(block);
+        }
+
+        self.block_index = block_index;
+        debug!("Transitioning to next block index: {}", self.block_index);
+
+        // 第二步：启动新的后台计算任务
+        let validators_clone: Vec<Validator> = validators.to_vec();
+        let stop_signal = Arc::new(AtomicBool::new(false));
+        let stop_signal_clone = Arc::clone(&stop_signal);
+
+        let handle = thread::spawn(move || {
+            let pow_blocks = Arc::new(Mutex::new(HashMap::new()));
+            let mut handles = vec![];
+
+            for validator in validators_clone {
+                let address = validator.address.clone();
+                let hash_power = validator.hash_power;
+                let pow_blocks_clone = Arc::clone(&pow_blocks);
+                let stop_signal_inner = Arc::clone(&stop_signal_clone);
+                let index = block_index;
+
+                let handle = thread::spawn(move || {
+                    // 基于算力的参数设置
+                    // 参考 PoW 实现：模拟不同算力的计算速率
+                    let base_sleep_micros = 5_000.0; // 基础休眠时间（微秒）
+                    let batch_size = 5_000; // 每计算多少次检查一次休眠
+
+                    // 执行PoW计算，持续运算直到收到停止信号
+                    let mut nonce = 0u64;
+                    let mut best_pow_block = None::<PowBlock>;
+
+                    loop {
+                        // 检查是否收到停止信号
+                        if stop_signal_inner.load(Ordering::Relaxed) {
+                            break;
+                        }
+
+                        // 模拟根据算力的运算间隔
+                        if nonce % batch_size == 0 && nonce > 0 {
+                            // 算力越高，sleep 时间越短
+                            let sleep_duration = (base_sleep_micros / hash_power) as u64;
+                            if sleep_duration > 0 {
+                                thread::sleep(Duration::from_micros(sleep_duration));
+                            }
+                        }
+
+                        let mut hasher = Sha256::new();
+                        hasher.update(address.as_bytes());
+                        hasher.update(index.to_le_bytes());
+                        hasher.update(nonce.to_le_bytes());
+                        let hash = hasher.finalize();
+
+                        // 计算当前hash的难度（leading zeros数量）
+                        let difficulty = Self::calculate_difficulty(&hash.to_vec());
+
+                        // 如果这是第一次或者难度更大，更新最佳PowBlock
+                        if best_pow_block.is_none()
+                            || difficulty > best_pow_block.as_ref().unwrap().max_difficulty
+                        {
+                            let mut rng = StdRng::from_seed([index as u8; 32]);
+                            let pow_nonce = rng.next_u64();
+
+                            best_pow_block = Some(PowBlock {
+                                address: address.clone(),
+                                hash_count: nonce + 1,
+                                index,
+                                nonce: pow_nonce,
+                                max_difficulty: difficulty,
+                            });
+
+                            if difficulty > 0 {
+                                debug!(
+                                    "PoW computation in index {}: address={}, hash_count={}, max_difficulty={}",
+                                    index,
+                                    address,
+                                    nonce + 1,
+                                    difficulty
+                                );
+                            }
+                        }
+
+                        nonce += 1;
+                    }
+
+                    // 将最佳结果存储到共享的HashMap中
+                    if let Some(pow_block) = best_pow_block {
+                        let max_diff = pow_block.max_difficulty;
+                        let mut blocks = pow_blocks_clone.lock().unwrap();
+                        blocks.entry(index).or_insert_with(Vec::new).push(pow_block);
+
+                        debug!(
+                            "PoW computation finished for index {}: address={}, total attempts={}, max_difficulty={}",
+                            index, address, nonce, max_diff
+                        );
+                    }
+                });
+
+                handles.push(handle);
+            }
+
+            // 等待所有计算线程完成
+            for handle in handles {
+                handle.join().expect("Worker thread panicked");
+            }
+
+            // 收集所有结果
+            let results = pow_blocks.lock().unwrap();
+            let mut all_blocks = Vec::new();
+            for (_, blocks) in results.iter() {
+                all_blocks.extend(blocks.clone());
+            }
+
+            info!(
+                "Background PoW computation completed for block index: {} blocks produced",
+                all_blocks.len()
+            );
+            all_blocks
+        });
+
+        // 保存后台任务信息
+        let mut task_guard = self.background_task.lock().unwrap();
+        *task_guard = Some((block_index, handle, stop_signal));
+
+        info!(
+            "Started background PoW computation for block index {}: {} validators",
+            block_index,
+            validators.len()
+        );
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pow_computation_counts_all_attempts() {
-        // 测试PoW计算计数所有尝试（不过滤难度）
-        let consensus = MinotaurConsensus::new(1.0);
-        let hash_count = consensus.perform_pow_computation("node1", 0, 100);
-        // 所有100次尝试都应该被计数
-        assert_eq!(hash_count, 100);
-    }
-
-    #[test]
-    fn test_pow_computation_zero_attempts() {
-        let consensus = MinotaurConsensus::new(1.0);
-        let hash_count = consensus.perform_pow_computation("node1", 0, 0);
-        assert_eq!(hash_count, 0);
-    }
-
-    #[test]
-    fn test_pow_block_management() {
-        let mut consensus = MinotaurConsensus::new(1.0);
-        let block = PowBlock {
-            address: "node1".to_string(),
-            hash_count: 1000,
-            slot: 0,
-            nonce: 42,
-        };
-        consensus.add_pow_block(block.clone());
-
-        let blocks = consensus.get_pow_blocks(0);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].address, "node1");
-    }
-}
+mod tests {}
